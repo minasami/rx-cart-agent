@@ -1,0 +1,7 @@
+[
+  {"sku":"SYN-001","name":"Fictamol 500 mg tablets","pack":"20 tablets","priceUSD":3.50,"stock":40},
+  {"sku":"SYN-002","name":"Placebrin 250 mg capsules","pack":"14 capsules","priceUSD":6.20,"stock":12},
+  {"sku":"SYN-003","name":"Mockazole 20 mg tablets","pack":"28 tablets","priceUSD":8.90,"stock":0},
+  {"sku":"SYN-004","name":"Demoxin 100 mg syrup","pack":"120 ml","priceUSD":4.75,"stock":25},
+  {"sku":"SYN-005","name":"Samplivir 1% cream","pack":"30 g","priceUSD":5.10,"stock":18}
+]
