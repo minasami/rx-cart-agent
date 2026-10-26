@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@paypal/agent-toolkit": "1.11.0",
     "@paypal/react-paypal-js": "10.6.1",
     "ai": "7.0.153",
     "next": "16.4.3",

@@ -1,2 +1,3 @@
-export const metadata = { title: "Rx Cart Agent (demo)" };
-export default function RootLayout({ children }: { children: React.ReactNode }) { return <html lang="en"><body style={{fontFamily:"sans-serif",maxWidth:720,margin:"2rem auto"}}>{children}</body></html>; }
+import "./globals.css";
+export const metadata = { title: "Rx Cart Agent: synthetic demo" };
+export default function RootLayout({ children }: { children: React.ReactNode }) { return <html lang="en"><body>{children}</body></html>; }

@@ -1,0 +1,20 @@
+:root{--bg:#f6f8fb;--card:#fff;--ink:#14213d;--mute:#5b6577;--pri:#0070e0;--ok:#16794c;--warn:#a15c00;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 64px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:26px}h2{font-size:17px;margin:0 0 10px}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#e8eefc;color:#1d3c8f;margin-left:6px}
+.badge.mock{background:#fff1d6;color:var(--warn)}
+.banner{background:#fff8e6;border:1px solid #f3d38a;border-radius:10px;padding:10px 14px;margin:16px 0;font-size:14px}
+.card{background:var(--card);border:1px solid #e3e8ef;border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 1px 2px #0000000a}
+.card.done{border-color:#b7e1c9}.step{color:var(--mute);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+button{background:var(--pri);color:#fff;border:0;border-radius:9px;padding:9px 16px;font-weight:600;cursor:pointer}
+button.ghost{background:#eef3fb;color:var(--ink)}button:disabled{opacity:.45;cursor:not-allowed}
+input{border:1px solid #cfd6e0;border-radius:8px;padding:8px 10px;font:inherit}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.samples img{width:110px;border-radius:8px;border:2px solid transparent;cursor:pointer}.samples img.sel{border-color:var(--pri)}
+table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #eef1f5;text-align:left}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.total{font-size:18px;font-weight:700;text-align:right}
+.trace{background:#0f172a;color:#d6e2ff;border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;overflow:auto;max-height:260px}
+.err{color:var(--bad);font-weight:600}.mute{color:var(--mute);font-size:13px}
+.tabs button{margin-right:6px}

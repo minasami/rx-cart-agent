@@ -9,9 +9,15 @@ Next.js (App Router) on Vercel · Vercel AI SDK (`generateObject`, vision) throu
 
 ## Run
 ```bash
-cp .env.example .env.local   # fill in sandbox + AI Gateway keys
-npm install && npm run dev
+npm install
+cp .env.example .env.local   # set PHARMACIST_DEMO_PIN; everything else can stay mock
+npm run dev                  # full flow in MOCK mode, no keys needed
+npm test                     # unit tests (exact matching, PIN gate, agent gate)
 ```
+Real providers: `AI_PROVIDER=gateway` + `AI_GATEWAY_API_KEY`; `PAYPAL_MODE=sandbox` + sandbox `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`NEXT_PUBLIC_PAYPAL_CLIENT_ID`.
+
+## Agent mode
+`POST /api/agent`: an AI SDK agent with two tools. `build_cart` and `create_paypal_order`, which wraps the PayPal Agent Toolkit `create_order` (orders.create only). The pharmacist PIN is checked on the server. The tool schemas expose no amounts or approval, so the model can't bypass the gate.
 
 ## Flow
 1. `POST /api/extract`: image → `{items:[{name,quantity}]}`

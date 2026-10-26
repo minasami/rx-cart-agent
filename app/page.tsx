@@ -1,62 +1,87 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 type Ex = { name: string; quantity: number };
-type Line = { requested: string; quantity: number; status: string; match: { sku: string; name: string; pack: string; priceUSD: number } | null };
-const samples = ["rx-1.png", "rx-2.png", "rx-3.png"];
+type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
+const SAMPLES = ["rx-1.png", "rx-2.png", "rx-3.png"];
+const post = async (u: string, b: unknown) => { const r = await fetch(u, { method: "POST", body: JSON.stringify(b) }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error ?? r.statusText); return j; };
 
 export default function Home() {
-  const [img, setImg] = useState<string>(); const [items, setItems] = useState<Ex[]>([]);
-  const [cart, setCart] = useState<{ lines: Line[]; totalUSD: string }>(); const [pin, setPin] = useState("");
-  const [confirmed, setConfirmed] = useState(false); const [receipt, setReceipt] = useState<any>(); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
+  const [cfg, setCfg] = useState({ ai: "mock", paypal: "mock" });
+  const [mode, setMode] = useState<"guided" | "agent">("guided");
+  const [img, setImg] = useState<string>(); const [sample, setSample] = useState<string>();
+  const [items, setItems] = useState<Ex[]>([]); const [cart, setCart] = useState<{ lines: Line[]; totalUSD: string }>();
+  const [pin, setPin] = useState(""); const [confirmed, setConfirmed] = useState(false);
+  const [agent, setAgent] = useState<any>(); const [order, setOrder] = useState<any>(); const [receipt, setReceipt] = useState<any>();
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState("");
+  useEffect(() => { fetch("/api/config").then(r => r.json()).then(setCfg).catch(() => {}); }, []);
   const toDataUrl = (f: Blob) => new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(f); });
-  async function extract() {
-    if (!img) return; setBusy(true); setErr("");
-    try { const r = await fetch("/api/extract", { method: "POST", body: JSON.stringify({ imageDataUrl: img }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error ?? "Extraction failed"); setItems(j.items); } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
-  }
-  async function makeCart() { const r = await fetch("/api/cart", { method: "POST", body: JSON.stringify({ items }) }); setCart(await r.json()); setConfirmed(false); }
-  const okItems = () => cart!.lines.filter(l => l.status === "ok").map(l => ({ name: l.match!.name, quantity: l.quantity }));
+  const reset = () => { setItems([]); setCart(undefined); setConfirmed(false); setAgent(undefined); setOrder(undefined); setReceipt(undefined); setErr(""); };
+  const run = async (label: string, f: () => Promise<void>) => { setBusy(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); } };
+  const okItems = () => (cart?.lines ?? []).filter(l => l.status === "ok").map(l => ({ name: l.match!.name, quantity: l.quantity }));
   const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
+  const capture = (id: string) => run("Capturing…", async () => setReceipt(await post("/api/paypal/capture-order", { orderID: id })));
 
   return <main>
-    <h1>Rx Cart Agent</h1>
-    <p style={{ background: "#fff3cd", padding: 8 }}>Demo with synthetic data only. Not medical advice. Items are never substituted. PayPal <b>sandbox</b> only.</p>
+    <header><h1>💊 Rx Cart Agent</h1>
+      <div><span className={`badge ${cfg.ai === "mock" ? "mock" : ""}`}>AI: {cfg.ai}</span><span className={`badge ${cfg.paypal === "mock" ? "mock" : ""}`}>PayPal: {cfg.paypal}</span></div></header>
+    <div className="banner">⚠️ <b>Synthetic demo.</b> Fictional medicines, prices and prescriptions. No clinical, dosing or substitution advice. Items are never swapped. PayPal <b>sandbox</b> only, no real money.</div>
 
-    <h2>1. Upload a prescription</h2>
-    <input type="file" accept="image/*" onChange={async e => e.target.files?.[0] && setImg(await toDataUrl(e.target.files[0]))} />
-    <div>Or use a sample: {samples.map(s => <button key={s} onClick={async () => setImg(await toDataUrl(await (await fetch(`/samples/${s}`)).blob()))}>{s}</button>)}</div>
-    {img && <img src={img} alt="prescription" style={{ maxWidth: 320, display: "block", margin: "8px 0" }} />}
-    <button disabled={!img || busy} onClick={extract}>{busy ? "Reading…" : "Extract medicines"}</button>
+    <section className={`card ${img ? "done" : ""}`}><div className="step">Step 1</div><h2>Upload a prescription</h2>
+      <div className="row samples">{SAMPLES.map(s => <img key={s} src={`/samples/${s}`} alt={s} className={sample === s ? "sel" : ""}
+        onClick={async () => { reset(); setSample(s); setImg(await toDataUrl(await (await fetch(`/samples/${s}`)).blob())); }} />)}</div>
+      <div className="row"><input type="file" accept="image/*" onChange={async e => { const f = e.target.files?.[0]; if (f) { reset(); setSample(undefined); setImg(await toDataUrl(f)); } }} />
+        <button disabled={!img || !!busy} onClick={() => run("Reading prescription…", async () => { const j = await post("/api/extract", { imageDataUrl: img, sampleId: sample }); setItems(j.items); setCart(undefined); })}>{busy.startsWith("Reading") ? busy : "Extract medicines with AI"}</button></div>
+    </section>
 
-    {items.length > 0 && <><h2>2. Extracted items (check and edit)</h2>
-      {items.map((it, i) => <div key={i}>
-        <input value={it.name} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} style={{ width: 280 }} />
-        <input type="number" min={1} value={it.quantity} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, quantity: Math.max(1, +e.target.value) } : x))} style={{ width: 60 }} />
-      </div>)}
-      <button onClick={makeCart}>Build cart</button></>}
+    {items.length > 0 && <section className={`card ${cart ? "done" : ""}`}><div className="step">Step 2</div><h2>Check what the AI read</h2>
+      <p className="mute">Edit any mistakes. Names must match the catalog exactly. Nothing is guessed or substituted.</p>
+      {items.map((it, i) => <div className="row" key={i}>
+        <input style={{ flex: 1 }} value={it.name} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+        <input type="number" min={1} style={{ width: 70 }} value={it.quantity} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, quantity: Math.max(1, +e.target.value) } : x))} />
+        <button className="ghost" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button></div>)}
+      <button onClick={() => run("Building cart…", async () => { setCart(await post("/api/cart", { items })); setConfirmed(false); setOrder(undefined); setAgent(undefined); })}>Build cart</button>
+    </section>}
 
-    {cart && <><h2>3. Cart (demo pharmacy)</h2>
-      <table><tbody>{cart.lines.map((l, i) => <tr key={i}><td>{l.requested}</td><td>×{l.quantity}</td>
-        <td>{l.status === "ok" ? `${l.match!.pack} · $${(l.match!.priceUSD * l.quantity).toFixed(2)}` : l.status === "not_found" ? "❌ Not in catalog (no substitute offered)" : "⚠️ Out of stock"}</td></tr>)}</tbody></table>
-      <p><b>Total: ${cart.totalUSD}</b></p>
+    {cart && <section className="card"><div className="step">Step 3</div><h2>Cart: Demo Pharmacy (fictional)</h2>
+      <table><thead><tr><th>Requested</th><th>Qty</th><th>Status</th><th>Line total</th></tr></thead><tbody>
+        {cart.lines.map((l, i) => <tr key={i}><td>{l.requested}{l.match && <div className="mute">{l.match.pack}</div>}</td><td>{l.quantity}</td>
+          <td>{l.status === "ok" ? <span className="ok">✓ In stock</span> : l.status === "not_found" ? <span className="bad">✕ Not in catalog: no substitute</span> : <span className="warn">⚠ Out of stock</span>}</td>
+          <td>{l.status === "ok" ? `$${(l.match!.priceUSD * l.quantity).toFixed(2)}` : "-"}</td></tr>)}
+      </tbody></table><p className="total">Total: ${cart.totalUSD}</p></section>}
 
-      <h2>4. Pharmacist confirmation</h2>
-      <input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => setPin(e.target.value)} />
-      <button disabled={!pin || Number(cart.totalUSD) <= 0} onClick={() => setConfirmed(true)}>Pharmacist confirms cart</button>
-      <small> (The PIN is checked on the server before the PayPal order is created.)</small></>}
+    {cart && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
+      <p className="mute">A pharmacist reviews the cart. The PIN is checked <b>on the server</b> before any PayPal order can be created, including by the AI agent.</p>
+      <div className="row"><input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => setPin(e.target.value)} />
+        <button disabled={!pin || Number(cart.totalUSD) <= 0} onClick={() => setConfirmed(true)}>Confirm cart</button>
+        {confirmed && <span className="ok">✓ Confirmed (verified at order creation)</span>}</div></section>}
 
-    {cart && confirmed && !receipt && <><h2>5. Pay with PayPal (sandbox)</h2>
-      {clientId ? <PayPalScriptProvider options={{ clientId, currency: "USD", intent: "capture" }}>
-        <PayPalButtons style={{ layout: "vertical" }}
-          createOrder={async () => { const r = await fetch("/api/paypal/create-order", { method: "POST", body: JSON.stringify({ items: okItems(), pharmacistPin: pin }) }); const j = await r.json(); if (!r.ok) { setErr(j.error); setConfirmed(false); throw new Error(j.error); } return j.id; }}
-          onApprove={async d => { const r = await fetch("/api/paypal/capture-order", { method: "POST", body: JSON.stringify({ orderID: d.orderID }) }); setReceipt(await r.json()); }}
-          onError={e => setErr(String(e))} />
-      </PayPalScriptProvider> : <p>Set NEXT_PUBLIC_PAYPAL_CLIENT_ID in .env.local to show the sandbox button.</p>}</>}
+    {cart && <section className="card"><div className="step">Step 5</div><h2>Pay</h2>
+      <div className="row tabs"><button className={mode === "guided" ? "" : "ghost"} onClick={() => setMode("guided")}>PayPal button</button>
+        <button className={mode === "agent" ? "" : "ghost"} onClick={() => setMode("agent")}>🤖 AI agent (PayPal Agent Toolkit)</button></div>
 
-    {receipt && <><h2>6. Receipt</h2>
-      <p>Status: <b>{receipt.status}</b> · Order ID: {receipt.id}</p>
-      <p>Amount: ${receipt.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value} (sandbox, no real money)</p></>}
+      {mode === "agent" && <>
+        <p className="mute">The agent calls <code>build_cart</code>, then <code>create_paypal_order</code> (PayPal Agent Toolkit <code>create_order</code>, behind the server-side pharmacist gate). It controls no prices.</p>
+        <button disabled={!!busy} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems().length ? items : items, pharmacistPin: confirmed ? pin : "" }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id) setOrder(o); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
+        {agent && <><p><b>Agent:</b> {agent.text}</p><pre className="trace">{agent.trace.map((t: any) => `▶ ${t.tool}\n${JSON.stringify(t.output, null, 1).slice(0, 600)}`).join("\n\n")}</pre></>}
+        {order?.id && !receipt && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
+          : <p className="mute">Sandbox order {order.id} created. Approve it via its PayPal approve link (<code>links[rel=payer-action]</code>), then capture.</p>)}
+      </>}
 
-    {err && <p style={{ color: "crimson" }}>{err}</p>}
+      {mode === "guided" && (!confirmed ? <p className="mute">Confirm the cart first.</p> :
+        cfg.paypal === "mock" || !clientId
+          ? <button disabled={!!busy} onClick={() => run("Paying…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin }); setOrder(o); setReceipt(await post("/api/paypal/capture-order", { orderID: o.id })); })}>Pay with PayPal (mock sandbox)</button>
+          : <PayPalScriptProvider options={{ clientId, currency: "USD", intent: "capture" }}>
+            <PayPalButtons style={{ layout: "vertical" }}
+              createOrder={async () => { try { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin }); setOrder(o); return o.id; } catch (e: any) { setErr(e.message); setConfirmed(false); throw e; } }}
+              onApprove={async d => capture(d.orderID!)} onError={e => setErr(String(e))} /></PayPalScriptProvider>)}
+    </section>}
+
+    {receipt && <section className="card done"><div className="step">Step 6</div><h2>✅ Receipt</h2>
+      <p>Status: <b>{receipt.status}</b> · Order <code>{receipt.id}</code>{receipt.mock && <span className="badge mock">mock</span>}</p>
+      <p>Paid: <b>${receipt.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value ?? cart?.totalUSD}</b> (sandbox, no real money)</p>
+      <p className="mute">Flagged items were not charged and were not substituted.</p></section>}
+
+    {busy && <p className="mute">{busy}</p>}{err && <p className="err">{err}</p>}
   </main>;
 }
