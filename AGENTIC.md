@@ -15,3 +15,7 @@ Checked Oct 24, 2026. Sources: https://developer.paypal.com/ai-tools/toolkit (up
 2. `create_order` is wrapped: it refuses unless `pharmacistApproved()` is true (a server-side check). Payer approval stays with PayPal Buttons or the approve link.
 3. Show the agent's tool-call trace in the UI for the demo video.
 Not yet installed. Add it on the Nov 1 milestone after the core flow works.
+
+## Dependency security overrides
+
+`@paypal/agent-toolkit@1.11.0` pulls old transitive deps (ai v4, zod v3, @langchain/core 0.3, openai 4, mathjs 14, langsmith, uuid, jsondiffpatch) that `npm audit` flagged (12 vulns: 1 moderate, 11 high). `package.json` `overrides` pins them to patched versions (ai/zod follow the app's own pins). Verified: the toolkit still loads, `getTools().create_order` validates input and reaches PayPal OAuth; the 14 tests, typecheck and build pass; `npm audit` reports 0 vulnerabilities. If a future toolkit release breaks under these overrides, fall back to the direct Orders v2 call in `lib/paypal.ts` (same endpoint the toolkit uses: POST /v2/checkout/orders), still behind the server-side PIN gate.

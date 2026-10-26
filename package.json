@@ -25,5 +25,17 @@
     "@types/react-dom": "19.3.0",
     "typescript": "7.0.2",
     "vitest": "5.0.5"
+  },
+  "overrides": {
+    "@paypal/agent-toolkit": {
+      "ai": "$ai",
+      "zod": "$zod",
+      "@langchain/core": "1.3.0",
+      "openai": "7.45.0",
+      "mathjs": "15.2.0"
+    },
+    "langsmith": "0.11.1",
+    "uuid": "14.0.3",
+    "jsondiffpatch": "0.7.6"
   }
 }
