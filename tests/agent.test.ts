@@ -30,6 +30,11 @@ describe("agent PIN gate around PayPal create_order", () => {
     expect(p.items[0]).toMatchObject({ name: "Fictamol 500 mg tablets", quantity: 2, itemCost: 3.5, itemTotal: 7 });
     expect(r.text).toMatch(/not found/);
   });
+  it("mock agent summary labels out-of-stock lines readably (no stray underscore)", async () => {
+    const r = await runAgent({ items: [{ name: "Mockazole 20 mg tablets", quantity: 1 }], approved: false, createOrder: vi.fn(), useModel: false });
+    expect(r.text).toContain("Mockazole 20 mg tablets (out of stock)");
+    expect(r.text).not.toContain("_");
+  });
 });
 describe("toolkit create_order output", () => {
   it("parses the JSON string the toolkit returns into the order object", () => {

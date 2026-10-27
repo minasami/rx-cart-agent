@@ -75,7 +75,7 @@ export async function runAgent(opts: { items: { name: string; quantity: number }
   if (!opts.useModel) { // deterministic mock agent: same tool sequence a model would follow
     const cart: any = await tools.build_cart.execute!({}, { toolCallId: "m1", messages: [] } as any);
     const order: any = await tools.create_paypal_order.execute!({}, { toolCallId: "m2", messages: [] } as any);
-    const flagged = cart.lines.filter((l: any) => l.status !== "ok").map((l: any) => `${l.requested} (${l.status.replace("_", " ")})`);
+    const flagged = cart.lines.filter((l: any) => l.status !== "ok").map((l: any) => `${l.requested} (${l.status.replaceAll("_", " ")})`);
     const text = (flagged.length ? `Flagged, not substituted: ${flagged.join(", ")}. ` : "") + (order.error ? order.error : `PayPal order ${order.id} created for $${cart.totalUSD}.`);
     return { text, trace, provider: "mock" as const };
   }
