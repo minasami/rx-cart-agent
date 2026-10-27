@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { randomBytes } from "node:crypto";
 import { createOrder } from "@/lib/paypal";
 import { buildCart } from "@/lib/cart";
 import { pharmacistApproved } from "@/lib/gate";
+import { cartHash, signApproval } from "@/lib/approval";
 import { CartItemsSchema, PinSchema } from "@/lib/schemas";
 import { paypalMode } from "@/lib/mode";
 import { jsonError, parseBody, route } from "@/lib/http";
@@ -9,8 +11,11 @@ const Body = z.object({ items: CartItemsSchema, pharmacistPin: PinSchema.optiona
 export const POST = route(async req => {
   const { items, pharmacistPin } = await parseBody(req, Body);
   if (!pharmacistApproved(pharmacistPin)) return jsonError(403, "Pharmacist confirmation required before payment");
-  const { totalUSD } = buildCart(items); // recomputed server-side
-  if (Number(totalUSD) <= 0) return jsonError(400, "Empty cart");
-  if (paypalMode() === "mock") return Response.json({ id: "MOCK-" + Date.now(), status: "CREATED", mock: true, totalUSD });
-  return Response.json(await createOrder(totalUSD));
+  const cart = buildCart(items); // recomputed server-side
+  if (Number(cart.totalUSD) <= 0) return jsonError(400, "Empty cart");
+  const ch = cartHash(cart);
+  const order = paypalMode() === "mock"
+    ? { id: "MOCK-" + randomBytes(6).toString("hex").toUpperCase(), status: "CREATED", mock: true, totalUSD: cart.totalUSD }
+    : await createOrder(cart.totalUSD);
+  return Response.json({ ...order, cartHash: ch, approvalToken: signApproval(order.id, ch) });
 });
