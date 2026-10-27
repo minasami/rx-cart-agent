@@ -23,7 +23,7 @@ export function route(handler: (req: Request) => Promise<Response>) {
     catch (e) {
       if (e instanceof HttpError) return jsonError(e.status, e.message, e.extra, e.headers);
       if (e instanceof ZodError) return jsonError(400, "Invalid request", { issues: e.issues.map(i => ({ path: i.path.join("."), message: i.message })) });
-      if (e instanceof PayPalError) return jsonError(502, e.message, { paypal: { status: e.status, name: e.paypalName, debug_id: e.debugId } });
+      if (e instanceof PayPalError) return jsonError(502, e.message, { paypal: { status: e.status, name: e.paypalName, issue: e.issue, debug_id: e.debugId } });
       console.error(e);
       return jsonError(500, "Internal error");
     }

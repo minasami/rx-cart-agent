@@ -6,7 +6,9 @@ export class PayPalError extends Error {
     super(message);
     this.name = "PayPalError";
   }
-  toJSON() { return { status: this.status, name: this.paypalName, message: this.message, debug_id: this.debugId, details: this.details }; }
+  /** First `details[].issue` (e.g. ORDER_NOT_APPROVED), the actionable part of PayPal's generic 422. */
+  get issue(): string | undefined { const d = Array.isArray(this.details) ? this.details[0] : undefined; return typeof d?.issue === "string" ? d.issue : undefined; }
+  toJSON() { return { status: this.status, name: this.paypalName, issue: this.issue, message: this.message, debug_id: this.debugId, details: this.details }; }
 }
 
 async function readJson(r: Response): Promise<any> {
@@ -15,7 +17,12 @@ async function readJson(r: Response): Promise<any> {
 }
 async function ensureOk(r: Response, what: string) {
   const body = await readJson(r);
-  if (!r.ok) throw new PayPalError(r.status, body?.name ?? body?.error, `PayPal ${what} failed (${r.status}): ${body?.message ?? body?.error_description ?? r.statusText}`, body?.debug_id, body?.details);
+  if (!r.ok) {
+    const d = Array.isArray(body?.details) ? body.details[0] : undefined;
+    const issue = typeof d?.issue === "string" ? ` ${d.issue}` : "";
+    const why = (typeof d?.description === "string" && d.description) || body?.message || body?.error_description || r.statusText;
+    throw new PayPalError(r.status, body?.name ?? body?.error, `PayPal ${what} failed (${r.status}${issue}): ${why}`, body?.debug_id, body?.details);
+  }
   return body;
 }
 

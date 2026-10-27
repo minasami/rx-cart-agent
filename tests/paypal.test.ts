@@ -17,6 +17,13 @@ describe("PayPal REST client error handling", () => {
       u.includes("oauth2") ? res(200, { access_token: "T", expires_in: 3600 }) : res(422, { name: "ORDER_NOT_APPROVED", message: "payer has not approved" })));
     await expect(captureOrder("ABC123")).rejects.toMatchObject({ status: 422, paypalName: "ORDER_NOT_APPROVED" });
   });
+  it("surfaces PayPal's details[0].issue (real sandbox 422 shape for capture before buyer approval)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (u: string) =>
+      u.includes("oauth2") ? res(200, { access_token: "T", expires_in: 3600 }) : res(422, { name: "UNPROCESSABLE_ENTITY", message: "The requested action could not be performed, semantically incorrect, or failed business validation.", debug_id: "d2", details: [{ issue: "ORDER_NOT_APPROVED", description: "Payer has not yet approved the Order for payment." }] })));
+    const e = await captureOrder("ABC123").catch(e => e);
+    expect(e).toMatchObject({ status: 422, paypalName: "UNPROCESSABLE_ENTITY", issue: "ORDER_NOT_APPROVED", debugId: "d2" });
+    expect(e.message).toBe("PayPal capture failed (422 ORDER_NOT_APPROVED): Payer has not yet approved the Order for payment.");
+  });
   it("throws when auth fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res(401, { error: "invalid_client", error_description: "Client Authentication failed" })));
     await expect(createOrder("1.00")).rejects.toMatchObject({ status: 401 });

@@ -27,6 +27,24 @@ describe("route input validation", () => {
     expect((await r.json()).paypal.status).toBe(401);
   });
 });
+describe("capture-order before buyer approval (sandbox)", () => {
+  it("returns a structured 502 with the PayPal issue and frees the capture slot for a retry", async () => {
+    vi.stubEnv("PAYPAL_MODE", "sandbox"); vi.stubEnv("PAYPAL_CLIENT_ID", "cid"); vi.stubEnv("PAYPAL_CLIENT_SECRET", "sec");
+    const f = vi.fn().mockImplementation(async (u: string) => String(u).includes("oauth2")
+      ? new Response(JSON.stringify({ access_token: "T", expires_in: 3600 }), { status: 200 })
+      : new Response(JSON.stringify({ name: "UNPROCESSABLE_ENTITY", message: "failed business validation", debug_id: "d3", details: [{ issue: "ORDER_NOT_APPROVED", description: "Payer has not yet approved the Order for payment." }] }), { status: 422 }));
+    vi.stubGlobal("fetch", f);
+    const id = "7R2557816W8631947", body = { orderID: id, approvalToken: signApproval(id, cartHash(buildCart(items))), items };
+    const r = await capture(req(body)); const j = await r.json();
+    const r2 = await capture(req(body));
+    vi.unstubAllGlobals();
+    expect(r.status).toBe(502);
+    expect(j.status).toBeUndefined();
+    expect(j.paypal).toMatchObject({ status: 422, name: "UNPROCESSABLE_ENTITY", issue: "ORDER_NOT_APPROVED", debug_id: "d3" });
+    expect(j.error).toContain("ORDER_NOT_APPROVED");
+    expect(r2.status).toBe(502); // not 409 "already captured"
+  });
+});
 describe("capture-order MOCK- prefix", () => {
   const sandbox = () => { vi.stubEnv("PAYPAL_MODE", "sandbox"); vi.stubEnv("PAYPAL_CLIENT_ID", "cid"); vi.stubEnv("PAYPAL_CLIENT_SECRET", "sec"); };
   it("sandbox mode rejects a MOCK- order id instead of faking COMPLETED (no PayPal call)", async () => {
