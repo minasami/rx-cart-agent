@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createAgentTools, runAgent, toToolkitOrder } from "../lib/agent";
+import { createAgentTools, runAgent, toToolkitOrder, normalizeToolkitOutput } from "../lib/agent";
 const items = [{ name: "Fictamol 500 mg tablets", quantity: 2 }, { name: "Unknownex 5 mg tablets", quantity: 1 }];
 const ctx = { toolCallId: "t", messages: [] } as any;
 describe("agent PIN gate around PayPal create_order", () => {
@@ -29,5 +29,16 @@ describe("agent PIN gate around PayPal create_order", () => {
     expect(p.items).toHaveLength(1);
     expect(p.items[0]).toMatchObject({ name: "Fictamol 500 mg tablets", quantity: 2, itemCost: 3.5, itemTotal: 7 });
     expect(r.text).toMatch(/not found/);
+  });
+});
+describe("toolkit create_order output", () => {
+  it("parses the JSON string the toolkit returns into the order object", () => {
+    const order = { id: "5O190127TN364715T", status: "PAYER_ACTION_REQUIRED", links: [{ rel: "payer-action", href: "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T" }] };
+    expect(normalizeToolkitOutput(JSON.stringify(order))).toEqual(order);
+  });
+  it("maps toolkit / PayPal error shapes to {error}", () => {
+    expect(normalizeToolkitOutput(JSON.stringify({ error: { message: "boom", type: "paypal_error" } }))).toMatchObject({ error: "boom" });
+    expect(normalizeToolkitOutput({ name: "INVALID_REQUEST", message: "bad" })).toMatchObject({ error: "INVALID_REQUEST: bad" });
+    expect(normalizeToolkitOutput("not json")).toHaveProperty("error");
   });
 });

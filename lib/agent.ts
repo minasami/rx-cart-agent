@@ -51,7 +51,16 @@ export async function toolkitCreateOrder(): Promise<ToolkitCreateOrder> {
     configuration: { actions: { orders: { create: true } }, context: { sandbox: true } },
   });
   const t = tk.getTools().create_order as any;
-  return (args) => t.execute(args, {});
+  return async (args) => normalizeToolkitOutput(await t.execute(args, {}));
+}
+/** The toolkit's execute() returns a JSON *string* (the PayPal order, or {error:{message,type}}); parse it to an object. */
+export function normalizeToolkitOutput(out: unknown): Record<string, unknown> {
+  let v: any = out;
+  if (typeof out === "string") { try { v = JSON.parse(out); } catch { return { error: "PayPal toolkit returned a non-JSON response" }; } }
+  if (!v || typeof v !== "object") return { error: "PayPal toolkit returned an empty response" };
+  if (v.error && typeof v.error === "object") return { error: String(v.error.message ?? "PayPal error"), type: v.error.type };
+  if (typeof v.name === "string" && typeof v.message === "string" && !v.id) return { error: `${v.name}: ${v.message}`, debug_id: v.debug_id };
+  return v;
 }
 export const mockCreateOrder: ToolkitCreateOrder = async (p: any) => ({
   id: "MOCK-" + Math.random().toString(36).slice(2, 10).toUpperCase(), status: "CREATED", mock: true,
