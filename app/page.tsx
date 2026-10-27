@@ -23,20 +23,26 @@ export default function Home() {
   const [cfg, setCfg] = useState<{ ai: string; paypal: string; demoPin?: boolean }>({ ai: "mock", paypal: "mock" });
   const [mode, setMode] = useState<"guided" | "agent">("guided");
   const [img, setImg] = useState<string>(); const [sample, setSample] = useState<string>();
-  const [items, setItems] = useState<Ex[]>([]); const [cart, setCart] = useState<Cart>();
+  const [items, setItemsRaw] = useState<Ex[]>([]); const [cart, setCart] = useState<Cart>(); const [stale, setStale] = useState(false);
   const [pin, setPin] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [agent, setAgent] = useState<any>(); const [order, setOrder] = useState<any>(); const [receipt, setReceipt] = useState<any>();
   const [err, setErr] = useState(""); const [busy, setBusy] = useState("");
   useEffect(() => { fetch("/api/config").then(r => r.json()).then(setCfg).catch(() => {}); }, []);
   const toDataUrl = (f: Blob) => new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(f); });
-  const reset = () => { setItems([]); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
+  const reset = () => { setItemsRaw([]); setStale(false); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
   const run = async (label: string, f: () => Promise<void>) => { setBusy(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); } };
   const okItems = () => (cart?.lines ?? []).filter(l => l.status === "ok").map(l => ({ name: l.match!.name, quantity: l.quantity }));
   const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
   const orderRef = useRef<any>(undefined); // latest created order (+ server approval token), readable from PayPal callbacks
   const keepOrder = (o: any) => { orderRef.current = o; setOrder(o); };
+  // Editing items after the cart was built marks the cart stale: confirmation and payment are hidden until rebuilt.
+  const setItems = (next: Ex[]) => { setItemsRaw(next); if (cart) { setStale(true); setConfirmed(false); } };
+  const buildCartFor = async (its: Ex[]) => {
+    setCart(await post("/api/cart", { items: its })); setStale(false); setConfirmed(false); keepOrder(undefined); setAgent(undefined); setReceipt(undefined);
+  };
   const extract = (imageDataUrl: string, sampleId?: string) => run("Reading prescription…", async () => {
-    const j = await post("/api/extract", { imageDataUrl, sampleId }); setItems(j.items); setCart(undefined);
+    const j = await post("/api/extract", { imageDataUrl, sampleId }); setItemsRaw(j.items); setCart(undefined); setStale(false);
+    if (j.items?.length) { setBusy("Building cart…"); await buildCartFor(j.items); } // auto-build; items stay editable
   });
   const capture = (id: string) => run("Capturing…", async () => setReceipt(await post("/api/paypal/capture-order", { orderID: id, approvalToken: orderRef.current?.approvalToken, items: okItems() })));
 
@@ -58,17 +64,18 @@ export default function Home() {
         <input style={{ flex: 1 }} value={it.name} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
         <input type="number" min={1} max={999} step={1} style={{ width: 70 }} value={it.quantity} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, quantity: Math.min(999, Math.max(1, Math.floor(+e.target.value) || 1)) } : x))} />
         <button className="ghost" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button></div>)}
-      <button onClick={() => run("Building cart…", async () => { setCart(await post("/api/cart", { items })); setConfirmed(false); keepOrder(undefined); setAgent(undefined); })}>Build cart</button>
+      <div className="row"><button disabled={!!busy || items.length === 0} className={cart && !stale ? "ghost" : ""} onClick={() => run("Building cart…", () => buildCartFor(items))}>{cart ? "Rebuild cart" : "Build cart"}</button>
+        {stale && <span className="warn">Items changed. Rebuild the cart before confirming.</span>}</div>
     </section>}
 
-    {cart && <section className="card"><div className="step">Step 3</div><h2>Cart: Demo Pharmacy (fictional)</h2>
+    {cart && <section className={`card ${stale ? "stale" : ""}`}><div className="step">Step 3</div><h2>Cart: Demo Pharmacy (fictional)</h2>
       <table><thead><tr><th>Requested</th><th>Qty</th><th>Status</th><th>Line total</th></tr></thead><tbody>
         {cart.lines.map((l, i) => <tr key={i}><td>{l.requested}{l.match && <div className="mute">{l.match.pack}</div>}</td><td>{l.quantity}</td>
           <td>{l.status === "ok" ? <span className="ok">✓ In stock</span> : l.status === "not_found" ? <span className="bad">✕ Not in catalog: no substitute</span> : <span className="warn">⚠ Out of stock</span>}</td>
           <td>{l.status === "ok" ? `$${(l.match!.priceUSD * l.quantity).toFixed(2)}` : "-"}</td></tr>)}
       </tbody></table><p className="total">Total: ${cart.totalUSD}</p></section>}
 
-    {cart && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
+    {cart && !stale && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
       <p className="mute">A pharmacist reviews the cart. The PIN is checked <b>on the server</b> before any PayPal order can be created, including by the AI agent.</p>
       <div className="row"><input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => { setPin(e.target.value); setConfirmed(false); }} />
         {cfg.paypal === "mock" && cfg.demoPin && <button className="ghost" disabled={!!busy} title="Mock mode only. Fills the PIN without showing it."
@@ -76,7 +83,7 @@ export default function Home() {
         <button disabled={!pin || !!busy || Number(cart.totalUSD) <= 0} onClick={() => run("Checking PIN…", async () => { await post("/api/pharmacist/verify", { pin }); setConfirmed(true); })}>Confirm cart</button>
         {confirmed && <span className="ok">✓ PIN verified by the server (re-checked at order creation)</span>}</div></section>}
 
-    {cart && <section className="card"><div className="step">Step 5</div><h2>Pay</h2>
+    {cart && !stale && <section className="card"><div className="step">Step 5</div><h2>Pay</h2>
       <div className="row tabs"><button className={mode === "guided" ? "" : "ghost"} onClick={() => setMode("guided")}>PayPal button</button>
         <button className={mode === "agent" ? "" : "ghost"} onClick={() => setMode("agent")}>🤖 AI agent (PayPal Agent Toolkit)</button></div>
 
