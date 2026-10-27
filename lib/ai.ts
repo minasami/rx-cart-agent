@@ -1,6 +1,6 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { createGoogle } from "@ai-sdk/google";
-import { ANSWERED_MODEL_HEADER, geminiRetryFetch } from "./googleFetch";
+import { ANSWERED_MODEL_HEADER, GEMINI_TOTAL_BUDGET_MS, geminiRetryFetch } from "./googleFetch";
 import { z } from "zod";
 import { MAX_QTY } from "./schemas";
 export type ExtractedItem = { name: string; quantity: number };
@@ -89,12 +89,16 @@ export function sanitizeExtracted(raw: { name?: unknown; quantity?: unknown }[])
   return { items, dropped };
 }
 
-export async function extractPrescription(imageDataUrl: string, sampleId?: string, model?: LanguageModel, provider: AiProvider = aiProvider()): Promise<Extracted> {
-  if (provider === "mock") return { items: MOCK_FIXTURES[sampleId ?? ""] ?? MOCK_FIXTURES["rx-1.png"], provider: "mock" };
+/** Hard ceiling for one extraction request (the google fetch has its own 35s budget; this also covers gateway and body reads). */
+export const EXTRACT_DEADLINE_MS = GEMINI_TOTAL_BUDGET_MS + 3_000;
+/** Mock fixture for a bundled sample (rx-1 for anything else). Used by AI_PROVIDER=mock and the UI's labeled demo fallback. */
+export const demoExtraction = (sampleId?: string): Extracted => ({ items: MOCK_FIXTURES[sampleId ?? ""] ?? MOCK_FIXTURES["rx-1.png"], provider: "mock" });
+export async function extractPrescription(imageDataUrl: string, sampleId?: string, model?: LanguageModel, provider: AiProvider = aiProvider(), deadlineMs = EXTRACT_DEADLINE_MS): Promise<Extracted> {
+  if (provider === "mock") return demoExtraction(sampleId);
   model ??= resolveModel(provider);
   const mediaType = imageDataUrl.slice(5, imageDataUrl.indexOf(";"));
   const { output, response } = await generateText({
-    model, output: Output.object({ schema: ModelSchema }), instructions: EXTRACT_SYSTEM, temperature: 0, ...callBudget(provider, 1000),
+    model, output: Output.object({ schema: ModelSchema }), instructions: EXTRACT_SYSTEM, temperature: 0, ...callBudget(provider, 1000), abortSignal: AbortSignal.timeout(deadlineMs),
     messages: [{ role: "user", content: [{ type: "text", text: "Transcribe the medicine lines and their quantities." }, { type: "file", data: imageDataUrl, mediaType }] }],
   });
   const { items, dropped } = sanitizeExtracted(output.items);

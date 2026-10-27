@@ -60,14 +60,15 @@ describe("extraction via google (mocked)", () => {
     expect(JSON.stringify(body.contents)).toContain("inlineData");
     expect(body.generationConfig.responseMimeType).toBe("application/json");
   });
-  it("free-tier 429 becomes a readable 502 without leaking the key or image", async () => {
+  it("free-tier 429 becomes a readable 503 (reason quota, demo offered) without leaking the key or image", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response(JSON.stringify({ error: { code: 429, message: "Quota exceeded", status: "RESOURCE_EXHAUSTED" } }), { status: 429, headers: { "content-type": "application/json" } })));
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await extract(post({ imageDataUrl: IMG }));
     const logged = JSON.stringify(spy.mock.calls); spy.mockRestore();
-    expect(r.status).toBe(502);
+    expect(r.status).toBe(503); expect(r.headers.get("retry-after")).toBe("30");
     const j = await r.json();
     expect(j.error).toMatch(/^Extraction failed: Gemini API rate limit or quota reached/);
+    expect(j).toMatchObject({ reason: "quota", demoAvailable: true });
     expect(logged + JSON.stringify(j)).not.toContain(FAKE_KEY);
     expect(logged).not.toContain("iVBORw0KGgo");
   }, 20_000);
@@ -135,6 +136,27 @@ describe("google model fallback (end to end, mocked HTTP)", () => {
     vi.stubGlobal("fetch", f);
     const j = await (await extract(post({ imageDataUrl: IMG, sampleId: "rx-3.png" }))).json();
     expect(j).toMatchObject({ provider: "google", model: "gemini-fb-test", items: MOCK_FIXTURES["rx-3.png"] });
+  });
+});
+describe("extraction deadlines and the demo fallback", () => {
+  it("a Gemini call that never answers ends in a quick 503 timeout (never hangs)", async () => {
+    const { extractPrescription: ex } = await import("../lib/ai");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation((_u: string, init?: RequestInit) =>
+      new Promise((_, rej) => init?.signal?.addEventListener("abort", () => rej(Object.assign(new Error("The operation timed out."), { name: "TimeoutError" }))))));
+    const t0 = Date.now();
+    // Route-level deadline is EXTRACT_DEADLINE_MS (38s); exercise the same path with a short one.
+    const e = await ex(IMG, "rx-1.png", undefined, "google", 150).catch(x => x);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    expect(publicReason(providerErrorInfo(e), "google")).toMatch(/did not answer in time/);
+  });
+  it("/api/extract demo:true returns the labeled mock fixture for a bundled sample without calling the AI", async () => {
+    const f = vi.fn(); vi.stubGlobal("fetch", f);
+    const r = await extract(post({ sampleId: "rx-2.png", demo: true }));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ items: MOCK_FIXTURES["rx-2.png"], provider: "mock", demo: true });
+    expect(f).not.toHaveBeenCalled();
+    expect((await extract(post({ sampleId: "upload", demo: true }))).status).toBe(400);
+    expect((await extract(post({ sampleId: "rx-1.png" }))).status).toBe(400); // no image and not demo
   });
 });
 describe("agent keeps a created order when the model fails afterwards", () => {
