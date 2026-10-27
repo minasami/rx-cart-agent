@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PayPalSdkButtons } from "./PayPalSdkButtons";
 import { savePending } from "@/lib/pending";
-import { SAMPLES, createBusyGuard, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
+import { SAMPLES, busyHint, createBusyGuard, demoFallbackFor, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
@@ -29,6 +29,11 @@ export default function Home() {
   const [pin, setPin] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [agent, setAgent] = useState<any>(); const [order, setOrder] = useState<any>(); const [receipt, setReceipt] = useState<any>();
   const [err, setErr] = useState(""); const [busy, setBusyState] = useState("");
+  // Elapsed time of the current busy step, so a slow AI call shows progress instead of a frozen spinner.
+  const [busySince, setBusySince] = useState(0); const [tick, setTick] = useState(0);
+  useEffect(() => { if (!busy) return; const t = setInterval(() => setTick(Date.now()), 1000); return () => clearInterval(t); }, [busy]);
+  // AI extraction failed: offer the labeled demo fixture (bundled samples only). demoUsed labels the items as demo data.
+  const [aiFailed, setAiFailed] = useState(false); const [demoUsed, setDemoUsed] = useState(false);
   // Synchronous guard: `busy` state is stale inside async handlers, so double clicks / clicks mid-run are rejected here.
   const guard = useRef(createBusyGuard()).current;
   const setBusy = (l: string) => { guard.set(l); setBusyState(guard.busy); };
@@ -41,8 +46,8 @@ export default function Home() {
     return () => { live = false; };
   }, []);
   const toDataUrl = (f: Blob) => new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(f); });
-  const reset = () => { setItemsRaw([]); setStale(false); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
-  const run = async (label: string, f: () => Promise<void>) => { if (!guard.tryStart(label)) return; setBusyState(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { guard.end(); setBusyState(""); } };
+  const reset = () => { setAiFailed(false); setDemoUsed(false); setItemsRaw([]); setStale(false); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
+  const run = async (label: string, f: () => Promise<void>) => { if (!guard.tryStart(label)) return; setBusyState(label); setBusySince(Date.now()); setTick(Date.now()); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { guard.end(); setBusyState(""); } };
   const okItems = () => (cart?.lines ?? []).filter(l => l.status === "ok").map(l => ({ name: l.match!.name, quantity: l.quantity }));
   const clientId = cfg?.paypalClientId ?? ""; // served at runtime by /api/config (sandbox only)
   const orderRef = useRef<any>(undefined); // latest created order (+ server approval token), readable from PayPal callbacks
@@ -53,7 +58,17 @@ export default function Home() {
     setCart(await post("/api/cart", { items: its })); setStale(false); setConfirmed(false); keepOrder(undefined); setAgent(undefined); setReceipt(undefined);
   };
   const doExtract = async (imageDataUrl: string, sampleId?: string) => {
-    const j = await post("/api/extract", { imageDataUrl, sampleId }); setItemsRaw(j.items); setCart(undefined); setStale(false);
+    setAiFailed(false); setDemoUsed(false);
+    let j: any;
+    try { j = await post("/api/extract", { imageDataUrl, sampleId }); } catch (e) { setAiFailed(true); throw e; }
+    await applyExtracted(j);
+  };
+  // Labeled demo fallback: the server returns the bundled mock fixture for this sample (no AI call).
+  const demoExtract = (sampleId: string) => run("Loading demo extraction…", async () => {
+    const j = await post("/api/extract", { sampleId, demo: true }); setAiFailed(false); setDemoUsed(true); await applyExtracted(j);
+  });
+  const applyExtracted = async (j: any) => {
+    setItemsRaw(j.items); setCart(undefined); setStale(false);
     if (j.items?.length) { setBusy("Building cart…"); await buildCartFor(j.items); } // auto-build; items stay editable
   };
   const extract = (imageDataUrl: string, sampleId?: string) => run("Reading prescription…", () => doExtract(imageDataUrl, sampleId));
@@ -81,7 +96,7 @@ export default function Home() {
     <header><h1>💊 Rx Cart Agent</h1>
       <div aria-live="polite" aria-busy={!cfg && !cfgFailed}>{configBadges(cfg, cfgFailed).map(b => <span key={b.label.split(":")[0]} className={`badge ${b.tone === "real" ? "" : b.tone}`}>{b.label}</span>)}</div></header>
     <div className="toasts" aria-live="polite">
-      {busy && <div className="toast busy" role="status"><span className="spin" aria-hidden="true" />{busy}</div>}
+      {busy && <div className="toast busy" role="status"><span className="spin" aria-hidden="true" />{busy}{tick && busyHint(tick - busySince) ? <span className="mute" style={{ marginLeft: 8 }}>{busyHint(tick - busySince)}</span> : null}</div>}
       {err && <div className="toast error" role="alert"><span>⚠️ {err}</span><button className="ghost" aria-label="Dismiss error" onClick={() => setErr("")}>✕</button></div>}
     </div>
     <div className="banner">⚠️ <b>Synthetic demo.</b> Fictional medicines, prices and prescriptions. No clinical, dosing or substitution advice. Items are never swapped. PayPal <b>sandbox</b> only, no real money.</div>
@@ -94,9 +109,15 @@ export default function Home() {
         {!hydrated && <span className="mute">Loading…</span>}</div>
       <div className="row"><input type="file" accept="image/*" disabled={!!busy} onChange={async e => { const f = e.target.files?.[0]; if (f) { reset(); setSample(undefined); setImg(await toDataUrl(f)); } }} />
         <button disabled={!img || !!busy} onClick={() => img && extract(img, sample)}>{busy.startsWith("Reading") ? busy : "Extract medicines with AI"}</button></div>
+      {aiFailed && !busy && <div className="row demo-fallback" role="note">
+        {demoFallbackFor(sample)
+          ? <><button className="ghost" onClick={() => demoExtract(demoFallbackFor(sample)!)}>Use demo extraction</button>
+            <span className="mute">AI extraction is unavailable right now. This loads the bundled <b>demo</b> answer for {sample} (mock data, not read by AI).</span></>
+          : <span className="mute">AI extraction is unavailable right now. Retry later, or pick a bundled sample to use its demo extraction.</span>}
+      </div>}
     </section>
 
-    {items.length > 0 && <section className={`card ${cart ? "done" : ""}`}><div className="step">Step 2</div><h2>Check what the AI read</h2>
+    {items.length > 0 && <section className={`card ${cart ? "done" : ""}`}><div className="step">Step 2</div><h2>{demoUsed ? "Check the demo extraction" : "Check what the AI read"}{demoUsed && <span className="badge mock">DEMO data, not read by AI</span>}</h2>
       <p className="mute">Edit any mistakes. Names must match the catalog exactly. Nothing is guessed or substituted.</p>
       {items.map((it, i) => <div className="row" key={i}>
         <input style={{ flex: 1 }} value={it.name} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />

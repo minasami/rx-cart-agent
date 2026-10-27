@@ -48,3 +48,14 @@ describe("loadSample", () => {
     await expect(loadSample("rx-1.png", ok(), async () => "data:text/html;base64,AA")).rejects.toThrow(/not an image/);
   });
 });
+
+describe("busyHint / demoFallbackFor", () => {
+  it("shows nothing at first, then elapsed seconds, then a still-working hint", async () => {
+    const { busyHint } = await import("../lib/client");
+    expect(busyHint(500)).toBe(""); expect(busyHint(3_200)).toBe("3s"); expect(busyHint(12_000)).toMatch(/^12s, still working/);
+  });
+  it("offers the demo fixture only for bundled samples", async () => {
+    const { demoFallbackFor } = await import("../lib/client");
+    expect(demoFallbackFor("rx-1.png")).toBe("rx-1.png"); expect(demoFallbackFor(undefined)).toBeUndefined(); expect(demoFallbackFor("me.png")).toBeUndefined();
+  });
+});

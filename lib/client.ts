@@ -46,3 +46,13 @@ export async function loadSample(name: string, fetchFn: typeof fetch, toDataUrl:
   if (!d.startsWith("data:image/")) throw new Error(`Sample ${name} is not an image`);
   return d;
 }
+
+/** Elapsed / "still working" hint for a slow step (e.g. free-tier Gemini extraction). Empty for the first 2s. */
+export const busyHint = (elapsedMs: number, slowAfterMs = 8_000): string => {
+  if (!(elapsedMs >= 2_000)) return "";
+  const s = Math.floor(elapsedMs / 1000);
+  return elapsedMs >= slowAfterMs ? `${s}s, still working (the free-tier AI can take up to ~40s)` : `${s}s`;
+};
+/** A failed extraction can fall back to the labeled demo fixture only for the bundled samples. */
+export const demoFallbackFor = (sampleId: string | undefined): string | undefined =>
+  sampleId && (SAMPLES as readonly string[]).includes(sampleId) ? sampleId : undefined;
