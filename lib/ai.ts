@@ -1,5 +1,6 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { createGoogle } from "@ai-sdk/google";
+import { geminiRetryFetch } from "./googleFetch";
 import { z } from "zod";
 import { MAX_QTY } from "./schemas";
 export type ExtractedItem = { name: string; quantity: number };
@@ -26,13 +27,14 @@ export function resolveModel(provider: AiProvider = aiProvider()): LanguageModel
   const id = aiModel(provider);
   if (provider !== "google") return id; // plain string ids resolve through the default (Vercel AI Gateway) provider
   const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "";
-  if (!googleProvider || googleProvider.key !== key) googleProvider = { key, p: createGoogle({ apiKey: key || undefined }) };
+  if (!googleProvider || googleProvider.key !== key) googleProvider = { key, p: createGoogle({ apiKey: key || undefined, fetch: geminiRetryFetch() }) };
   return googleProvider.p(id);
 }
 export const modelId = (m: LanguageModel) => (typeof m === "string" ? m : m.modelId);
-/** Gemini "thinking" tokens count against maxOutputTokens, so give the google path more headroom; free tier 503s are common, so retry once more. */
+/** Gemini "thinking" tokens count against maxOutputTokens, so give the google path more headroom. Google retries are done
+ *  by geminiRetryFetch (honors the free tier's RetryInfo instead of burning the per-minute quota), so the SDK's are off. */
 export const callBudget = (provider: AiProvider, maxOutputTokens: number) =>
-  provider === "google" ? { maxOutputTokens: maxOutputTokens * 4, maxRetries: 2 } : { maxOutputTokens, maxRetries: 1 };
+  provider === "google" ? { maxOutputTokens: maxOutputTokens * 4, maxRetries: 0 } : { maxOutputTokens, maxRetries: 1 };
 
 // Deterministic fixtures for the bundled SYNTHETIC samples (what a model should read off them).
 export const MOCK_FIXTURES: Record<string, ExtractedItem[]> = {
