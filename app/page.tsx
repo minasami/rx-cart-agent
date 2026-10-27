@@ -38,7 +38,7 @@ export default function Home() {
       <p className="mute">Edit any mistakes. Names must match the catalog exactly. Nothing is guessed or substituted.</p>
       {items.map((it, i) => <div className="row" key={i}>
         <input style={{ flex: 1 }} value={it.name} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-        <input type="number" min={1} style={{ width: 70 }} value={it.quantity} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, quantity: Math.max(1, +e.target.value) } : x))} />
+        <input type="number" min={1} max={999} step={1} style={{ width: 70 }} value={it.quantity} onChange={e => setItems(items.map((x, j) => j === i ? { ...x, quantity: Math.min(999, Math.max(1, Math.floor(+e.target.value) || 1)) } : x))} />
         <button className="ghost" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button></div>)}
       <button onClick={() => run("Building cart…", async () => { setCart(await post("/api/cart", { items })); setConfirmed(false); setOrder(undefined); setAgent(undefined); })}>Build cart</button>
     </section>}
