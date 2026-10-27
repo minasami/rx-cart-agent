@@ -1,4 +1,5 @@
 import { aiProvider } from "@/lib/ai";
+import { paypalMode } from "@/lib/mode";
 export async function GET() {
-  return Response.json({ ai: aiProvider(), paypal: process.env.PAYPAL_MODE === "sandbox" && !!process.env.PAYPAL_CLIENT_ID ? "sandbox" : "mock" });
+  return Response.json({ ai: aiProvider(), paypal: paypalMode() });
 }

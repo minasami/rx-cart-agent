@@ -24,3 +24,20 @@ describe("route input validation", () => {
     expect((await r.json()).paypal.status).toBe(401);
   });
 });
+describe("capture-order MOCK- prefix", () => {
+  const sandbox = () => { vi.stubEnv("PAYPAL_MODE", "sandbox"); vi.stubEnv("PAYPAL_CLIENT_ID", "cid"); vi.stubEnv("PAYPAL_CLIENT_SECRET", "sec"); };
+  it("sandbox mode rejects a MOCK- order id instead of faking COMPLETED (no PayPal call)", async () => {
+    sandbox(); const f = vi.fn(); vi.stubGlobal("fetch", f);
+    const r = await capture(req({ orderID: "MOCK-123" }));
+    vi.unstubAllGlobals();
+    expect(r.status).toBe(400);
+    expect((await r.json()).status).toBeUndefined();
+    expect(f).not.toHaveBeenCalled();
+  });
+  it("mock mode rejects a non-mock order id", async () => expect((await capture(req({ orderID: "5O190127TN364715T" }))).status).toBe(400));
+  it("PAYPAL_MODE=sandbox without credentials falls back to mock everywhere", async () => {
+    vi.stubEnv("PAYPAL_MODE", "sandbox"); vi.stubEnv("PAYPAL_CLIENT_ID", ""); vi.stubEnv("PAYPAL_CLIENT_SECRET", "");
+    const { paypalMode } = await import("../lib/mode");
+    expect(paypalMode()).toBe("mock");
+  });
+});
