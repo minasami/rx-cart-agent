@@ -35,6 +35,9 @@ export default function Home() {
   const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
   const orderRef = useRef<any>(undefined); // latest created order (+ server approval token), readable from PayPal callbacks
   const keepOrder = (o: any) => { orderRef.current = o; setOrder(o); };
+  const extract = (imageDataUrl: string, sampleId?: string) => run("Reading prescription…", async () => {
+    const j = await post("/api/extract", { imageDataUrl, sampleId }); setItems(j.items); setCart(undefined);
+  });
   const capture = (id: string) => run("Capturing…", async () => setReceipt(await post("/api/paypal/capture-order", { orderID: id, approvalToken: orderRef.current?.approvalToken, items: okItems() })));
 
   return <main>
@@ -44,9 +47,9 @@ export default function Home() {
 
     <section className={`card ${img ? "done" : ""}`}><div className="step">Step 1</div><h2>Upload a prescription</h2>
       <div className="row samples">{SAMPLES.map(s => <img key={s} src={`/samples/${s}`} alt={s} className={sample === s ? "sel" : ""}
-        onClick={async () => { reset(); setSample(s); setImg(await toDataUrl(await (await fetch(`/samples/${s}`)).blob())); }} />)}</div>
+        onClick={async () => { if (busy) return; reset(); setSample(s); const d = await toDataUrl(await (await fetch(`/samples/${s}`)).blob()); setImg(d); extract(d, s); }} />)}</div>
       <div className="row"><input type="file" accept="image/*" onChange={async e => { const f = e.target.files?.[0]; if (f) { reset(); setSample(undefined); setImg(await toDataUrl(f)); } }} />
-        <button disabled={!img || !!busy} onClick={() => run("Reading prescription…", async () => { const j = await post("/api/extract", { imageDataUrl: img, sampleId: sample }); setItems(j.items); setCart(undefined); })}>{busy.startsWith("Reading") ? busy : "Extract medicines with AI"}</button></div>
+        <button disabled={!img || !!busy} onClick={() => img && extract(img, sample)}>{busy.startsWith("Reading") ? busy : "Extract medicines with AI"}</button></div>
     </section>
 
     {items.length > 0 && <section className={`card ${cart ? "done" : ""}`}><div className="step">Step 2</div><h2>Check what the AI read</h2>
