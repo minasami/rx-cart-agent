@@ -43,15 +43,34 @@ export function createAgentTools(opts: { items: { name: string; quantity: number
   };
 }
 
-/** Real PayPal Agent Toolkit create_order (sandbox), limited to the orders.create action. */
-export async function toolkitCreateOrder(): Promise<ToolkitCreateOrder> {
+/**
+ * Real PayPal Agent Toolkit create_order (sandbox), limited to the orders.create action.
+ * The toolkit fetches an OAuth token once per instance and never refreshes it, so the instance is reused
+ * (one token instead of one per agent request) and rebuilt after TOOLKIT_TTL_MS, on a credential change, or
+ * after an error result (e.g. an expired token).
+ */
+export const TOOLKIT_TTL_MS = 30 * 60_000;
+type ToolkitExec = (args: Record<string, unknown>) => Promise<unknown>;
+let toolkitCache: { key: string; exec: ToolkitExec; createdAt: number } | null = null;
+export function _resetToolkitCache() { toolkitCache = null; }
+async function newToolkitExec(): Promise<ToolkitExec> {
   const { PayPalAgentToolkit } = await import("@paypal/agent-toolkit/ai-sdk");
   const tk = new PayPalAgentToolkit({
     clientId: process.env.PAYPAL_CLIENT_ID!, clientSecret: process.env.PAYPAL_CLIENT_SECRET!,
     configuration: { actions: { orders: { create: true } }, context: { sandbox: true } },
   });
   const t = tk.getTools().create_order as any;
-  return async (args) => normalizeToolkitOutput(await t.execute(args, {}));
+  return args => t.execute(args, {});
+}
+export async function toolkitCreateOrder(factory: () => Promise<ToolkitExec> = newToolkitExec, now = Date.now): Promise<ToolkitCreateOrder> {
+  const key = `${process.env.PAYPAL_CLIENT_ID}`;
+  if (!toolkitCache || toolkitCache.key !== key || now() - toolkitCache.createdAt > TOOLKIT_TTL_MS) toolkitCache = { key, exec: await factory(), createdAt: now() };
+  const entry = toolkitCache;
+  return async (args) => {
+    const out = normalizeToolkitOutput(await entry.exec(args));
+    if (out.error && toolkitCache === entry) toolkitCache = null;
+    return out;
+  };
 }
 /** The toolkit's execute() returns a JSON *string* (the PayPal order, or {error:{message,type}}); parse it to an object. */
 export function normalizeToolkitOutput(out: unknown): Record<string, unknown> {

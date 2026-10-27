@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createAgentTools, runAgent, toToolkitOrder, normalizeToolkitOutput } from "../lib/agent";
+import { createAgentTools, runAgent, toToolkitOrder, normalizeToolkitOutput, toolkitCreateOrder, _resetToolkitCache, TOOLKIT_TTL_MS } from "../lib/agent";
 const items = [{ name: "Fictamol 500 mg tablets", quantity: 2 }, { name: "Unknownex 5 mg tablets", quantity: 1 }];
 const ctx = { toolCallId: "t", messages: [] } as any;
 describe("agent PIN gate around PayPal create_order", () => {
@@ -45,5 +45,22 @@ describe("toolkit create_order output", () => {
     expect(normalizeToolkitOutput(JSON.stringify({ error: { message: "boom", type: "paypal_error" } }))).toMatchObject({ error: "boom" });
     expect(normalizeToolkitOutput({ name: "INVALID_REQUEST", message: "bad" })).toMatchObject({ error: "INVALID_REQUEST: bad" });
     expect(normalizeToolkitOutput("not json")).toHaveProperty("error");
+  });
+});
+describe("toolkit instance (OAuth token) reuse", () => {
+  it("reuses one toolkit across requests, rebuilds after TTL and after an error result", async () => {
+    _resetToolkitCache();
+    let t = 0; const now = () => t;
+    const exec = vi.fn().mockResolvedValue(JSON.stringify({ id: "O1", status: "PAYER_ACTION_REQUIRED" }));
+    const factory = vi.fn(async () => exec);
+    await (await toolkitCreateOrder(factory, now))({}); await (await toolkitCreateOrder(factory, now))({});
+    expect(factory).toHaveBeenCalledTimes(1);
+    t = TOOLKIT_TTL_MS + 1;
+    await (await toolkitCreateOrder(factory, now))({});
+    expect(factory).toHaveBeenCalledTimes(2);
+    exec.mockResolvedValueOnce(JSON.stringify({ error: { message: "token expired", type: "paypal_error" } }));
+    expect(await (await toolkitCreateOrder(factory, now))({})).toMatchObject({ error: "token expired" });
+    await (await toolkitCreateOrder(factory, now))({});
+    expect(factory).toHaveBeenCalledTimes(3);
   });
 });
