@@ -2,7 +2,7 @@ import { tool, generateText, isStepCount } from "ai";
 import { z } from "zod";
 import { buildCart } from "./cart";
 import { cancelUrl, returnUrl } from "./urls";
-import { aiModel } from "./ai";
+import { callBudget, modelId, resolveModel, type AiProvider } from "./ai";
 import type { LanguageModel } from "ai";
 
 export type ToolkitCreateOrder = (args: Record<string, unknown>) => Promise<any>;
@@ -117,7 +117,7 @@ export function summarize(trace: TraceEntry[]): string {
   return (flagged.length ? `Flagged, not substituted: ${flagged.join(", ")}. ` : "") + orderText;
 }
 
-export async function runAgent(opts: { items: { name: string; quantity: number }[]; approved: boolean; createOrder: ToolkitCreateOrder; useModel: boolean; model?: LanguageModel }) {
+export async function runAgent(opts: { items: { name: string; quantity: number }[]; approved: boolean; createOrder: ToolkitCreateOrder; useModel: boolean; model?: LanguageModel; provider?: Exclude<AiProvider, "mock"> }) {
   const trace: TraceEntry[] = [];
   const tools = createAgentTools({ ...opts, trace });
   if (!opts.useModel) { // deterministic mock agent: same tool sequence a model would follow
@@ -125,7 +125,9 @@ export async function runAgent(opts: { items: { name: string; quantity: number }
     await tools.create_paypal_order.execute!({}, { toolCallId: "m2", messages: [] } as any);
     return { text: summarize(trace), trace, provider: "mock" as const };
   }
-  const model = opts.model ?? aiModel();
-  const r = await generateText({ model, instructions: AGENT_SYSTEM, prompt: "Prepare and pay for this prescription order.", tools, stopWhen: isStepCount(4), temperature: 0, maxRetries: 1 });
-  return { text: r.text.trim() || summarize(trace), trace, provider: "gateway" as const, model: typeof model === "string" ? model : model.modelId };
+  const provider = opts.provider ?? "gateway";
+  const model = opts.model ?? resolveModel(provider);
+  const { maxRetries } = callBudget(provider, 0);
+  const r = await generateText({ model, instructions: AGENT_SYSTEM, prompt: "Prepare and pay for this prescription order.", tools, stopWhen: isStepCount(4), temperature: 0, maxRetries });
+  return { text: r.text.trim() || summarize(trace), trace, provider, model: modelId(model) };
 }

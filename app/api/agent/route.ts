@@ -16,8 +16,9 @@ export const POST = route(async req => {
   const approved = checkPinLimited(req, pharmacistPin); // server-side; the model never sees the PIN
   const paypalLive = paypalMode() === "sandbox";
   let r: Awaited<ReturnType<typeof runAgent>>;
-  try { r = await runAgent({ items, approved, createOrder: paypalLive ? await toolkitCreateOrder() : mockCreateOrder, useModel: aiProvider() === "gateway" }); }
-  catch (e) { const i = logProviderError("agent", e); throw new HttpError(502, `Agent run failed: ${publicReason(i)}`); }
+  const provider = aiProvider();
+  try { r = await runAgent({ items, approved, createOrder: paypalLive ? await toolkitCreateOrder() : mockCreateOrder, useModel: provider !== "mock", ...(provider !== "mock" ? { provider } : {}) }); }
+  catch (e) { const i = logProviderError("agent", e); throw new HttpError(502, `Agent run failed: ${publicReason(i, aiProvider())}`); }
   // If the (gated) tool created an order, issue the capture approval bound to that order and the server-side cart.
   const created = [...r.trace].reverse().find(t => t.tool === "create_paypal_order")?.output as { id?: unknown } | undefined;
   const orderID = OrderIdSchema.safeParse(created?.id);

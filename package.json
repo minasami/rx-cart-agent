@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/google": "4.0.106",
     "@paypal/agent-toolkit": "1.11.0",
     "@paypal/react-paypal-js": "10.6.1",
     "ai": "7.0.153",

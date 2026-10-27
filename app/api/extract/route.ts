@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { extractPrescription } from "@/lib/ai";
+import { aiProvider, extractPrescription } from "@/lib/ai";
 import { HttpError, parseBody, route } from "@/lib/http";
 import { logProviderError, publicReason } from "@/lib/providerError";
 const Body = z.object({
@@ -9,5 +9,5 @@ const Body = z.object({
 export const POST = route(async req => {
   const { imageDataUrl, sampleId } = await parseBody(req, Body);
   try { return Response.json(await extractPrescription(imageDataUrl, sampleId)); }
-  catch (e) { const i = logProviderError("extract", e); throw new HttpError(502, `Extraction failed: ${publicReason(i)}`); }
+  catch (e) { const i = logProviderError("extract", e); throw new HttpError(502, `Extraction failed: ${publicReason(i, aiProvider())}`); }
 });

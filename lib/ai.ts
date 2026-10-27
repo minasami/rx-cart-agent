@@ -1,13 +1,38 @@
 import { generateText, Output, type LanguageModel } from "ai";
+import { createGoogle } from "@ai-sdk/google";
 import { z } from "zod";
 import { MAX_QTY } from "./schemas";
 export type ExtractedItem = { name: string; quantity: number };
-export type Extracted = { items: ExtractedItem[]; provider: "mock" | "gateway"; model?: string; dropped?: { line: string; reason: string }[] };
-// AI_PROVIDER=gateway uses Vercel AI Gateway (needs AI_GATEWAY_API_KEY or Vercel OIDC). Anything else = mock.
-export const aiProvider = (): "mock" | "gateway" => (process.env.AI_PROVIDER === "gateway" ? "gateway" : "mock");
-/** Gateway model id. Must be vision + structured-output capable. An empty AI_MODEL (as in .env.example copies) falls back. */
+export type AiProvider = "mock" | "gateway" | "google";
+export type Extracted = { items: ExtractedItem[]; provider: AiProvider; model?: string; dropped?: { line: string; reason: string }[] };
+/**
+ * AI_PROVIDER=gateway: Vercel AI Gateway (needs AI_GATEWAY_API_KEY or Vercel OIDC).
+ * AI_PROVIDER=google: Google AI Studio / Gemini API directly via @ai-sdk/google (needs GOOGLE_GENERATIVE_AI_API_KEY).
+ * Anything else = mock.
+ */
+export const aiProvider = (): AiProvider => {
+  const p = process.env.AI_PROVIDER?.trim().toLowerCase();
+  return p === "gateway" ? "gateway" : p === "google" ? "google" : "mock";
+};
+/** Default model ids per provider. Must be vision + structured-output + tool-calling capable. */
 export const DEFAULT_AI_MODEL = "openai/gpt-4o-mini";
-export const aiModel = () => process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL;
+export const DEFAULT_GOOGLE_MODEL = "gemini-3.5-flash";
+/** Model id for the active provider. An empty AI_MODEL (as in .env.example copies) falls back to the provider default. */
+export const aiModel = (provider: AiProvider = aiProvider()) =>
+  process.env.AI_MODEL?.trim() || (provider === "google" ? DEFAULT_GOOGLE_MODEL : DEFAULT_AI_MODEL);
+let googleProvider: { key: string; p: ReturnType<typeof createGoogle> } | null = null;
+/** LanguageModel for the active provider: a Gemini model object for google, a gateway model id string for gateway. */
+export function resolveModel(provider: AiProvider = aiProvider()): LanguageModel {
+  const id = aiModel(provider);
+  if (provider !== "google") return id; // plain string ids resolve through the default (Vercel AI Gateway) provider
+  const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "";
+  if (!googleProvider || googleProvider.key !== key) googleProvider = { key, p: createGoogle({ apiKey: key || undefined }) };
+  return googleProvider.p(id);
+}
+export const modelId = (m: LanguageModel) => (typeof m === "string" ? m : m.modelId);
+/** Gemini "thinking" tokens count against maxOutputTokens, so give the google path more headroom; free tier 503s are common, so retry once more. */
+export const callBudget = (provider: AiProvider, maxOutputTokens: number) =>
+  provider === "google" ? { maxOutputTokens: maxOutputTokens * 4, maxRetries: 2 } : { maxOutputTokens, maxRetries: 1 };
 
 // Deterministic fixtures for the bundled SYNTHETIC samples (what a model should read off them).
 export const MOCK_FIXTURES: Record<string, ExtractedItem[]> = {
@@ -49,13 +74,14 @@ export function sanitizeExtracted(raw: { name?: unknown; quantity?: unknown }[])
   return { items, dropped };
 }
 
-export async function extractPrescription(imageDataUrl: string, sampleId?: string, model: LanguageModel = aiModel()): Promise<Extracted> {
-  if (aiProvider() === "mock") return { items: MOCK_FIXTURES[sampleId ?? ""] ?? MOCK_FIXTURES["rx-1.png"], provider: "mock" };
+export async function extractPrescription(imageDataUrl: string, sampleId?: string, model?: LanguageModel, provider: AiProvider = aiProvider()): Promise<Extracted> {
+  if (provider === "mock") return { items: MOCK_FIXTURES[sampleId ?? ""] ?? MOCK_FIXTURES["rx-1.png"], provider: "mock" };
+  model ??= resolveModel(provider);
   const mediaType = imageDataUrl.slice(5, imageDataUrl.indexOf(";"));
   const { output } = await generateText({
-    model, output: Output.object({ schema: ModelSchema }), instructions: EXTRACT_SYSTEM, temperature: 0, maxOutputTokens: 1000, maxRetries: 1,
+    model, output: Output.object({ schema: ModelSchema }), instructions: EXTRACT_SYSTEM, temperature: 0, ...callBudget(provider, 1000),
     messages: [{ role: "user", content: [{ type: "text", text: "Transcribe the medicine lines and their quantities." }, { type: "file", data: imageDataUrl, mediaType }] }],
   });
   const { items, dropped } = sanitizeExtracted(output.items);
-  return { items, provider: "gateway", model: typeof model === "string" ? model : model.modelId, ...(dropped.length ? { dropped } : {}) };
+  return { items, provider, model: modelId(model), ...(dropped.length ? { dropped } : {}) };
 }
