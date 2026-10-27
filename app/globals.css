@@ -20,3 +20,9 @@ table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px so
 .tabs button{margin-right:6px}
 a.btn{display:inline-block;background:var(--pri);color:#fff;border-radius:9px;padding:9px 16px;font-weight:600;text-decoration:none}
 .card.stale{opacity:.55}
+.toasts{position:sticky;top:8px;z-index:50;display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.toast{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.12);font-weight:600}
+.toast.busy{background:#eef4ff;color:#1d3f8a;justify-content:flex-start}.toast.error{background:#fdecec;color:var(--bad)}
+.toast .ghost{padding:2px 8px}
+.spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}

@@ -49,6 +49,10 @@ export default function Home() {
   return <main>
     <header><h1>💊 Rx Cart Agent</h1>
       <div><span className={`badge ${cfg.ai === "mock" ? "mock" : ""}`}>AI: {cfg.ai}</span><span className={`badge ${cfg.paypal === "mock" ? "mock" : ""}`}>PayPal: {cfg.paypal}</span></div></header>
+    <div className="toasts" aria-live="polite">
+      {busy && <div className="toast busy" role="status"><span className="spin" aria-hidden="true" />{busy}</div>}
+      {err && <div className="toast error" role="alert"><span>⚠️ {err}</span><button className="ghost" aria-label="Dismiss error" onClick={() => setErr("")}>✕</button></div>}
+    </div>
     <div className="banner">⚠️ <b>Synthetic demo.</b> Fictional medicines, prices and prescriptions. No clinical, dosing or substitution advice. Items are never swapped. PayPal <b>sandbox</b> only, no real money.</div>
 
     <section className={`card ${img ? "done" : ""}`}><div className="step">Step 1</div><h2>Upload a prescription</h2>
@@ -113,6 +117,5 @@ export default function Home() {
       <p>Paid: <b>${receipt.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value ?? cart?.totalUSD}</b> (sandbox, no real money)</p>
       <p className="mute">Flagged items were not charged and were not substituted.</p></section>}
 
-    {busy && <p className="mute">{busy}</p>}{err && <p className="err">{err}</p>}
   </main>;
 }
