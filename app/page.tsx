@@ -72,7 +72,7 @@ export default function Home() {
 
       {mode === "agent" && <>
         <p className="mute">The agent calls <code>build_cart</code>, then <code>create_paypal_order</code> (PayPal Agent Toolkit <code>create_order</code>, behind the server-side pharmacist gate). It controls no prices.</p>
-        <button disabled={!!busy} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems().length ? items : items, pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
+        <button disabled={!!busy || okItems().length === 0} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems(), pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
         {agent && <><p><b>Agent:</b> {agent.text}</p><pre className="trace">{agent.trace.map((t: any) => `▶ ${t.tool}\n${JSON.stringify(t.output, null, 1).slice(0, 600)}`).join("\n\n")}</pre></>}
         {order?.id && !receipt && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
           : <p className="mute">Sandbox order {order.id} created. Approve it via its PayPal approve link (<code>links[rel=payer-action]</code>), then capture.</p>)}
