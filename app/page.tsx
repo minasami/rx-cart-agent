@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import { PayPalSdkButtons } from "./PayPalSdkButtons";
 import { savePending } from "@/lib/pending";
 import { SAMPLES, createBusyGuard, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
 type Ex = { name: string; quantity: number };
@@ -44,7 +44,7 @@ export default function Home() {
   const reset = () => { setItemsRaw([]); setStale(false); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
   const run = async (label: string, f: () => Promise<void>) => { if (!guard.tryStart(label)) return; setBusyState(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { guard.end(); setBusyState(""); } };
   const okItems = () => (cart?.lines ?? []).filter(l => l.status === "ok").map(l => ({ name: l.match!.name, quantity: l.quantity }));
-  const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
+  const clientId = cfg?.paypalClientId ?? ""; // served at runtime by /api/config (sandbox only)
   const orderRef = useRef<any>(undefined); // latest created order (+ server approval token), readable from PayPal callbacks
   const keepOrder = (o: any) => { orderRef.current = o; setOrder(o); };
   // Editing items after the cart was built marks the cart stale: confirmation and payment are hidden until rebuilt.
@@ -71,7 +71,11 @@ export default function Home() {
     savePending(sessionStorage, { orderID: o.id, approvalToken: o.approvalToken, items: okItems(), totalUSD: cart?.totalUSD });
     window.location.assign(href);
   };
-  const capture = (id: string) => run("Capturing…", async () => setReceipt(await post("/api/paypal/capture-order", { orderID: id, approvalToken: orderRef.current?.approvalToken, items: okItems() })));
+  // Capture with the server-signed approval token issued for THIS order (popup onApprove, agent order, or mock).
+  const capture = (id: string) => run("Capturing…", async () => {
+    const o = orderRef.current; if (o?.id !== id || !o?.approvalToken) throw new Error(`No capture approval held for order ${id}. Create the order again.`);
+    setReceipt(await post("/api/paypal/capture-order", { orderID: id, approvalToken: o.approvalToken, items: okItems() }));
+  });
 
   return <main>
     <header><h1>💊 Rx Cart Agent</h1>
@@ -135,14 +139,15 @@ export default function Home() {
 
       {mode === "guided" && (!confirmed ? <p className="mute">Confirm the cart first.</p> :
         !cfg ? <p className="mute">{cfgFailed ? "Payment settings unavailable. Reload the page." : "Loading payment settings…"}</p> :
-        cfg.paypal === "sandbox" && !clientId
-          ? <button disabled={!!busy} onClick={() => run("Creating PayPal order…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); goApprove(o); })}>Pay with PayPal (sandbox, redirect)</button>
-        : cfg.paypal === "mock"
+        cfg.paypal === "mock"
           ? <button disabled={!!busy} onClick={() => run("Paying…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); setReceipt(await post("/api/paypal/capture-order", { orderID: o.id, approvalToken: o.approvalToken, items: okItems() })); })}>Pay with PayPal (mock sandbox)</button>
-          : <PayPalScriptProvider options={{ clientId, currency: "USD", intent: "capture" }}>
-            <PayPalButtons style={{ layout: "vertical" }}
-              createOrder={async () => { try { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); return o.id; } catch (e: any) { setErr(e.message); setConfirmed(false); throw e; } }}
-              onApprove={async d => capture(d.orderID!)} onError={e => setErr(String(e))} /></PayPalScriptProvider>)}
+          : receipt ? null : <>
+            {clientId && <PayPalSdkButtons clientId={clientId}
+              createOrder={async () => { setErr(""); try { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); return o.id; } catch (e: any) { setErr(e.message); if (/Pharmacist|Cart changed/.test(e.message)) setConfirmed(false); throw e; } }}
+              onApprove={async id => capture(id)} onCancel={() => setErr("PayPal payment cancelled. Nothing was charged.")} onError={m => setErr(m)} />}
+            <p className="mute">{clientId ? "Or, if the popup is blocked:" : "PayPal Buttons need a sandbox client ID from /api/config."}</p>
+            <button className={clientId ? "ghost" : ""} disabled={!!busy} onClick={() => run("Creating PayPal order…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); goApprove(o); })}>Pay with PayPal (sandbox, redirect)</button>
+          </>)}
     </section>}
 
     {receipt && <section className="card done"><div className="step">Step 6</div><h2>✅ Receipt</h2>
