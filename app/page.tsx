@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
+import { savePending } from "@/lib/pending";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
@@ -44,6 +45,12 @@ export default function Home() {
     const j = await post("/api/extract", { imageDataUrl, sampleId }); setItemsRaw(j.items); setCart(undefined); setStale(false);
     if (j.items?.length) { setBusy("Building cart…"); await buildCartFor(j.items); } // auto-build; items stay editable
   });
+  // Redirect flow: keep the approval for this order in this tab (sessionStorage), then go to PayPal; it returns to /return?token=<id>.
+  const goApprove = (o: any) => {
+    const href = approveLink(o); if (!href) throw new Error(`PayPal returned no approve link for order ${o?.id}`);
+    savePending(sessionStorage, { orderID: o.id, approvalToken: o.approvalToken, items: okItems(), totalUSD: cart?.totalUSD });
+    window.location.assign(href);
+  };
   const capture = (id: string) => run("Capturing…", async () => setReceipt(await post("/api/paypal/capture-order", { orderID: id, approvalToken: orderRef.current?.approvalToken, items: okItems() })));
 
   return <main>
@@ -98,13 +105,15 @@ export default function Home() {
         {order?.id && !receipt && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
           : <div className="row">
               {approveLink(order)
-                ? <a className="btn" href={approveLink(order)} target="_blank" rel="noopener noreferrer">Approve order {order.id} on PayPal (sandbox) ↗</a>
+                ? <a className="btn" href={approveLink(order)} rel="noopener noreferrer" onClick={e => { e.preventDefault(); try { goApprove(order); } catch (x: any) { setErr(x.message); } }}>Approve order {order.id} on PayPal (sandbox) →</a>
                 : <span className="mute">Sandbox order {order.id} created, but PayPal returned no approve link.</span>}
               <button className="ghost" disabled={!!busy} onClick={() => capture(order.id)}>I approved it: capture</button></div>)}
       </>}
 
       {mode === "guided" && (!confirmed ? <p className="mute">Confirm the cart first.</p> :
-        cfg.paypal === "mock" || !clientId
+        cfg.paypal === "sandbox" && !clientId
+          ? <button disabled={!!busy} onClick={() => run("Creating PayPal order…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); goApprove(o); })}>Pay with PayPal (sandbox, redirect)</button>
+        : cfg.paypal === "mock"
           ? <button disabled={!!busy} onClick={() => run("Paying…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); setReceipt(await post("/api/paypal/capture-order", { orderID: o.id, approvalToken: o.approvalToken, items: okItems() })); })}>Pay with PayPal (mock sandbox)</button>
           : <PayPalScriptProvider options={{ clientId, currency: "USD", intent: "capture" }}>
             <PayPalButtons style={{ layout: "vertical" }}
