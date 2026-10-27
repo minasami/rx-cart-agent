@@ -19,11 +19,19 @@ async function ensureOk(r: Response, what: string) {
   return body;
 }
 
+// OAuth access token cached in memory until shortly before it expires (per client id).
+let cached: { key: string; value: string; expiresAt: number } | null = null;
+const EXPIRY_MARGIN_MS = 60_000;
+export function _resetTokenCache() { cached = null; }
 async function token() {
+  const key = `${base()}|${process.env.PAYPAL_CLIENT_ID}`;
+  if (cached && cached.key === key && Date.now() < cached.expiresAt) return cached.value;
   const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString("base64");
   const r = await fetch(`${base()}/v1/oauth2/token`, { method: "POST", headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" }, body: "grant_type=client_credentials" });
   const j = await ensureOk(r, "auth");
-  return j.access_token as string;
+  const ttlMs = Math.max(0, (Number(j.expires_in) || 300) * 1000 - EXPIRY_MARGIN_MS);
+  cached = { key, value: j.access_token as string, expiresAt: Date.now() + ttlMs };
+  return cached.value;
 }
 export async function createOrder(totalUSD: string) {
   const r = await fetch(`${base()}/v2/checkout/orders`, { method: "POST", headers: { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" },
