@@ -1,3 +1,4 @@
+import { _resetPinLimiter } from "../lib/ratelimit";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { POST as cart } from "../app/api/cart/route";
 import { POST as createOrder } from "../app/api/paypal/create-order/route";
@@ -7,7 +8,7 @@ import { signApproval, cartHash } from "../lib/approval";
 import { buildCart } from "../lib/cart";
 const req = (body: unknown, raw = false) => new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: raw ? (body as string) : JSON.stringify(body) });
 const items = [{ name: "Fictamol 500 mg tablets", quantity: 2 }];
-beforeEach(() => { vi.unstubAllEnvs(); vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821"); vi.stubEnv("AI_PROVIDER", "mock"); });
+beforeEach(() => { _resetPinLimiter(); vi.unstubAllEnvs(); vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821"); vi.stubEnv("AI_PROVIDER", "mock"); });
 describe("route input validation", () => {
   for (const [name, h] of [["cart", cart], ["create-order", createOrder], ["capture-order", capture], ["agent", agent]] as const) {
     it(`${name}: 400 on malformed JSON`, async () => { const r = await h(req("{nope", true)); expect(r.status).toBe(400); expect((await r.json()).error).toBeTruthy(); });

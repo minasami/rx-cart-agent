@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { runAgent, toolkitCreateOrder, mockCreateOrder } from "@/lib/agent";
-import { pharmacistApproved } from "@/lib/gate";
+import { checkPinLimited } from "@/lib/ratelimit";
 import { buildCart } from "@/lib/cart";
 import { cartHash, signApproval } from "@/lib/approval";
 import { aiProvider } from "@/lib/ai";
@@ -12,7 +12,7 @@ export const POST = route(async req => {
   const { items, pharmacistPin, cartHash: reviewed } = await parseBody(req, Body);
   const ch = cartHash(buildCart(items));
   if (ch !== reviewed) return jsonError(409, "Cart changed since the pharmacist reviewed it. Rebuild and confirm again.");
-  const approved = pharmacistApproved(pharmacistPin); // server-side; the model never sees the PIN
+  const approved = checkPinLimited(req, pharmacistPin); // server-side; the model never sees the PIN
   const paypalLive = paypalMode() === "sandbox";
   let r: Awaited<ReturnType<typeof runAgent>>;
   try { r = await runAgent({ items, approved, createOrder: paypalLive ? await toolkitCreateOrder() : mockCreateOrder, useModel: aiProvider() === "gateway" }); }

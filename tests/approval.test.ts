@@ -1,3 +1,4 @@
+import { _resetPinLimiter } from "../lib/ratelimit";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { signApproval, verifyApproval, cartHash, APPROVAL_TTL_MS } from "../lib/approval";
 import { buildCart } from "../lib/cart";
@@ -8,7 +9,7 @@ import { POST as agent } from "../app/api/agent/route";
 const items = [{ name: "Fictamol 500 mg tablets", quantity: 2 }];
 const ch = cartHash(buildCart(items));
 const req = (body: unknown) => new Request("http://localhost/api", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-beforeEach(() => { vi.unstubAllEnvs(); vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821"); vi.stubEnv("AI_PROVIDER", "mock"); });
+beforeEach(() => { _resetPinLimiter(); vi.unstubAllEnvs(); vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821"); vi.stubEnv("AI_PROVIDER", "mock"); });
 
 describe("approval token (HMAC, short-lived, bound to orderID + cart hash)", () => {
   it("verifies a fresh token for the same order and cart", () => expect(verifyApproval(signApproval("O1", ch), "O1", ch)).toEqual({ ok: true }));
