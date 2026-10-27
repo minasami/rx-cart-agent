@@ -1,6 +1,7 @@
 import { tool, generateText, isStepCount } from "ai";
 import { z } from "zod";
 import { buildCart } from "./cart";
+import { cancelUrl, returnUrl } from "./urls";
 
 export type ToolkitCreateOrder = (args: Record<string, unknown>) => Promise<any>;
 export type TraceEntry = { tool: string; input: unknown; output: unknown };
@@ -15,6 +16,10 @@ export function toToolkitOrder(items: { name: string; quantity: number }[]) {
       itemCost: l.match!.priceUSD, taxPercent: 0, itemTotal: +(l.match!.priceUSD * l.quantity).toFixed(2),
     })),
     notes: "Synthetic demo order. Pharmacist-confirmed.",
+    // The toolkit (1.11.0) maps ONLY these two to payment_source.paypal.experience_context (it defaults them to
+    // https://example.com/...). It has no brand_name / user_action / shipping_preference inputs; it omits
+    // purchase_units[].shipping when no shippingAddress is given.
+    returnUrl: returnUrl(), cancelUrl: cancelUrl(),
   };
 }
 

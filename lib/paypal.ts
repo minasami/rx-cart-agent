@@ -1,3 +1,5 @@
+import { experienceContext } from "./urls";
+
 const base = () => process.env.PAYPAL_API_BASE ?? "https://api-m.sandbox.paypal.com";
 
 /** Structured error for a non-2xx PayPal response (PayPal error bodies look like {name, message, debug_id, details}). */
@@ -40,9 +42,18 @@ async function token() {
   cached = { key, value: j.access_token as string, expiresAt: Date.now() + ttlMs };
   return cached.value;
 }
+/** Orders v2 create body. experience_context gives PayPal a return_url, without which the sandbox buyer
+ *  approval page can loop ("Continue to review order" goes back to the payment screen). */
+export function orderBody(totalUSD: string) {
+  return {
+    intent: "CAPTURE",
+    purchase_units: [{ amount: { currency_code: "USD", value: totalUSD }, description: "Synthetic demo pharmacy order" }],
+    payment_source: { paypal: { experience_context: experienceContext() } },
+  };
+}
 export async function createOrder(totalUSD: string) {
   const r = await fetch(`${base()}/v2/checkout/orders`, { method: "POST", headers: { Authorization: `Bearer ${await token()}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ intent: "CAPTURE", purchase_units: [{ amount: { currency_code: "USD", value: totalUSD }, description: "Synthetic demo pharmacy order" }] }) });
+    body: JSON.stringify(orderBody(totalUSD)) });
   const j = await ensureOk(r, "create order");
   if (typeof j?.id !== "string") throw new PayPalError(502, "INVALID_RESPONSE", "PayPal create order returned no order id");
   return j;
