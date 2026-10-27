@@ -15,7 +15,7 @@ const post = async (u: string, b: unknown) => {
 };
 
 export default function Home() {
-  const [cfg, setCfg] = useState({ ai: "mock", paypal: "mock" });
+  const [cfg, setCfg] = useState<{ ai: string; paypal: string; demoPin?: boolean }>({ ai: "mock", paypal: "mock" });
   const [mode, setMode] = useState<"guided" | "agent">("guided");
   const [img, setImg] = useState<string>(); const [sample, setSample] = useState<string>();
   const [items, setItems] = useState<Ex[]>([]); const [cart, setCart] = useState<Cart>();
@@ -63,6 +63,8 @@ export default function Home() {
     {cart && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
       <p className="mute">A pharmacist reviews the cart. The PIN is checked <b>on the server</b> before any PayPal order can be created, including by the AI agent.</p>
       <div className="row"><input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => { setPin(e.target.value); setConfirmed(false); }} />
+        {cfg.paypal === "mock" && cfg.demoPin && <button className="ghost" disabled={!!busy} title="Mock mode only. Fills the PIN without showing it."
+          onClick={() => run("Loading demo PIN…", async () => { const r = await fetch("/api/pharmacist/demo-pin", { cache: "no-store" }); if (!r.ok) throw new Error("Demo PIN not available"); setPin((await r.json()).pin); setConfirmed(false); })}>Use demo PIN</button>}
         <button disabled={!pin || !!busy || Number(cart.totalUSD) <= 0} onClick={() => run("Checking PIN…", async () => { await post("/api/pharmacist/verify", { pin }); setConfirmed(true); })}>Confirm cart</button>
         {confirmed && <span className="ok">✓ PIN verified by the server (re-checked at order creation)</span>}</div></section>}
 
