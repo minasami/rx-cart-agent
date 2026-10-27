@@ -1,11 +1,15 @@
+import { z } from "zod";
 import { createOrder } from "@/lib/paypal";
 import { buildCart } from "@/lib/cart";
 import { pharmacistApproved } from "@/lib/gate";
-export async function POST(req: Request) {
-  const { items, pharmacistPin } = await req.json();
-  if (!pharmacistApproved(pharmacistPin)) return Response.json({ error: "Pharmacist confirmation required before payment" }, { status: 403 });
+import { CartItemsSchema, PinSchema } from "@/lib/schemas";
+import { jsonError, parseBody, route } from "@/lib/http";
+const Body = z.object({ items: CartItemsSchema, pharmacistPin: PinSchema.optional() });
+export const POST = route(async req => {
+  const { items, pharmacistPin } = await parseBody(req, Body);
+  if (!pharmacistApproved(pharmacistPin)) return jsonError(403, "Pharmacist confirmation required before payment");
   const { totalUSD } = buildCart(items); // recomputed server-side
-  if (Number(totalUSD) <= 0) return Response.json({ error: "Empty cart" }, { status: 400 });
+  if (Number(totalUSD) <= 0) return jsonError(400, "Empty cart");
   if (process.env.PAYPAL_MODE !== "sandbox") return Response.json({ id: "MOCK-" + Date.now(), status: "CREATED", mock: true, totalUSD });
   return Response.json(await createOrder(totalUSD));
-}
+});
