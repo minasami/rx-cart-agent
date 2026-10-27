@@ -40,6 +40,7 @@ PayPal Agent Toolkit 1.11.0's `create_order` only accepts `returnUrl`/`cancelUrl
 Other endpoints: `GET /api/config` (modes; plus `paypalClientId`/`paypalEnv` in sandbox), `GET /api/pharmacist/demo-pin` (mock mode only; powers the "Use demo PIN" button, 404 otherwise).
 
 ## Security notes (prototype)
+`scripts/security-demo.sh` shows PIN lockout, cart-hash binding and approval-token checks against a running server (prints statuses only; the PIN comes from `DEMO_PIN_FILE`/`DEMO_PIN` and is never printed).
 - Inputs are validated with zod (quantities are positive integers ≤ 999); errors return JSON 400, PayPal failures 502.
 - PIN comparison hashes both values (sha256) before `timingSafeEqual`. PIN endpoints have an in-memory lockout (5 failures per client / 50 global per 10 min → 429).
 - Capture requires an HMAC token bound to the order ID and cart hash (15 min TTL, single use). `MOCK-` order IDs are accepted only in mock mode.
