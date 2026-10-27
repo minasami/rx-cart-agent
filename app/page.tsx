@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { savePending } from "@/lib/pending";
+import { SAMPLES, createBusyGuard, loadSample } from "@/lib/client";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
@@ -10,7 +11,6 @@ const approveLink = (o: any): string | undefined => {
   const href = (o?.links as any[] | undefined)?.find(l => l?.rel === "payer-action" || l?.rel === "approve")?.href;
   try { const u = new URL(href); return u.protocol === "https:" && (u.hostname === "paypal.com" || u.hostname.endsWith(".paypal.com")) ? u.href : undefined; } catch { return undefined; }
 };
-const SAMPLES = ["rx-1.png", "rx-2.png", "rx-3.png"];
 // Treats non-2xx, non-JSON bodies, {error} and PayPal's error shape ({name, message, debug_id}) as errors.
 const post = async (u: string, b: unknown) => {
   const r = await fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
@@ -27,11 +27,16 @@ export default function Home() {
   const [items, setItemsRaw] = useState<Ex[]>([]); const [cart, setCart] = useState<Cart>(); const [stale, setStale] = useState(false);
   const [pin, setPin] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [agent, setAgent] = useState<any>(); const [order, setOrder] = useState<any>(); const [receipt, setReceipt] = useState<any>();
-  const [err, setErr] = useState(""); const [busy, setBusy] = useState("");
+  const [err, setErr] = useState(""); const [busy, setBusyState] = useState("");
+  // Synchronous guard: `busy` state is stale inside async handlers, so double clicks / clicks mid-run are rejected here.
+  const guard = useRef(createBusyGuard()).current;
+  const setBusy = (l: string) => { guard.set(l); setBusyState(guard.busy); };
+  const [hydrated, setHydrated] = useState(false); const [loadingSample, setLoadingSample] = useState<string>();
+  useEffect(() => setHydrated(true), []);
   useEffect(() => { fetch("/api/config").then(r => r.json()).then(setCfg).catch(() => {}); }, []);
   const toDataUrl = (f: Blob) => new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(f); });
   const reset = () => { setItemsRaw([]); setStale(false); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
-  const run = async (label: string, f: () => Promise<void>) => { setBusy(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { setBusy(""); } };
+  const run = async (label: string, f: () => Promise<void>) => { if (!guard.tryStart(label)) return; setBusyState(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { guard.end(); setBusyState(""); } };
   const okItems = () => (cart?.lines ?? []).filter(l => l.status === "ok").map(l => ({ name: l.match!.name, quantity: l.quantity }));
   const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
   const orderRef = useRef<any>(undefined); // latest created order (+ server approval token), readable from PayPal callbacks
@@ -41,9 +46,18 @@ export default function Home() {
   const buildCartFor = async (its: Ex[]) => {
     setCart(await post("/api/cart", { items: its })); setStale(false); setConfirmed(false); keepOrder(undefined); setAgent(undefined); setReceipt(undefined);
   };
-  const extract = (imageDataUrl: string, sampleId?: string) => run("Reading prescription…", async () => {
+  const doExtract = async (imageDataUrl: string, sampleId?: string) => {
     const j = await post("/api/extract", { imageDataUrl, sampleId }); setItemsRaw(j.items); setCart(undefined); setStale(false);
     if (j.items?.length) { setBusy("Building cart…"); await buildCartFor(j.items); } // auto-build; items stay editable
+  };
+  const extract = (imageDataUrl: string, sampleId?: string) => run("Reading prescription…", () => doExtract(imageDataUrl, sampleId));
+  // One guarded run from click to cart: busy feedback shows immediately, fetch/read errors surface in the error toast.
+  const pickSample = (s: string) => run("Loading sample…", async () => {
+    reset(); setSample(s); setImg(undefined); setLoadingSample(s);
+    try {
+      const d = await loadSample(s, fetch, toDataUrl); setImg(d);
+      setBusy("Reading prescription…"); await doExtract(d, s);
+    } finally { setLoadingSample(undefined); }
   });
   // Redirect flow: keep the approval for this order in this tab (sessionStorage), then go to PayPal; it returns to /return?token=<id>.
   const goApprove = (o: any) => {
@@ -63,9 +77,12 @@ export default function Home() {
     <div className="banner">⚠️ <b>Synthetic demo.</b> Fictional medicines, prices and prescriptions. No clinical, dosing or substitution advice. Items are never swapped. PayPal <b>sandbox</b> only, no real money.</div>
 
     <section className={`card ${img ? "done" : ""}`}><div className="step">Step 1</div><h2>Upload a prescription</h2>
-      <div className="row samples">{SAMPLES.map(s => <img key={s} src={`/samples/${s}`} alt={s} className={sample === s ? "sel" : ""}
-        onClick={async () => { if (busy) return; reset(); setSample(s); const d = await toDataUrl(await (await fetch(`/samples/${s}`)).blob()); setImg(d); extract(d, s); }} />)}</div>
-      <div className="row"><input type="file" accept="image/*" onChange={async e => { const f = e.target.files?.[0]; if (f) { reset(); setSample(undefined); setImg(await toDataUrl(f)); } }} />
+      <div className="row samples" aria-busy={!hydrated || !!loadingSample}>{SAMPLES.map(s =>
+        <button key={s} type="button" className={`sample ${sample === s ? "sel" : ""} ${loadingSample === s ? "loading" : ""}`}
+          disabled={!hydrated || !!busy} aria-pressed={sample === s} title={hydrated ? `Use sample ${s}` : "Loading…"} onClick={() => pickSample(s)}>
+          <img src={`/samples/${s}`} alt={`Sample prescription ${s}`} />{loadingSample === s && <span className="spin" aria-hidden="true" />}</button>)}
+        {!hydrated && <span className="mute">Loading…</span>}</div>
+      <div className="row"><input type="file" accept="image/*" disabled={!!busy} onChange={async e => { const f = e.target.files?.[0]; if (f) { reset(); setSample(undefined); setImg(await toDataUrl(f)); } }} />
         <button disabled={!img || !!busy} onClick={() => img && extract(img, sample)}>{busy.startsWith("Reading") ? busy : "Extract medicines with AI"}</button></div>
     </section>
 
