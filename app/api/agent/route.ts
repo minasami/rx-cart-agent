@@ -7,6 +7,7 @@ import { aiProvider } from "@/lib/ai";
 import { CartHashSchema, CartItemsSchema, OrderIdSchema, PinSchema } from "@/lib/schemas";
 import { paypalMode } from "@/lib/mode";
 import { HttpError, jsonError, parseBody, route } from "@/lib/http";
+import { logProviderError, publicReason } from "@/lib/providerError";
 const Body = z.object({ items: CartItemsSchema, pharmacistPin: PinSchema.optional(), cartHash: CartHashSchema });
 export const POST = route(async req => {
   const { items, pharmacistPin, cartHash: reviewed } = await parseBody(req, Body);
@@ -16,7 +17,7 @@ export const POST = route(async req => {
   const paypalLive = paypalMode() === "sandbox";
   let r: Awaited<ReturnType<typeof runAgent>>;
   try { r = await runAgent({ items, approved, createOrder: paypalLive ? await toolkitCreateOrder() : mockCreateOrder, useModel: aiProvider() === "gateway" }); }
-  catch (e) { console.error(e); throw new HttpError(502, "Agent run failed (AI or PayPal provider error)"); }
+  catch (e) { const i = logProviderError("agent", e); throw new HttpError(502, `Agent run failed: ${publicReason(i)}`); }
   // If the (gated) tool created an order, issue the capture approval bound to that order and the server-side cart.
   const created = [...r.trace].reverse().find(t => t.tool === "create_paypal_order")?.output as { id?: unknown } | undefined;
   const orderID = OrderIdSchema.safeParse(created?.id);
