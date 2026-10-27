@@ -54,3 +54,11 @@ describe("PIN lockout", () => {
     expect(Number(r.headers.get("Retry-After"))).toBeGreaterThan(0);
   });
 });
+describe("/api/pharmacist/verify", () => {
+  it("200 for the right PIN, 403 for a wrong one, 429 after lockout", async () => {
+    const { POST: verify } = await import("../app/api/pharmacist/verify/route");
+    expect((await verify(reqFrom("4.4.4.4", { pin: "4821" }))).status).toBe(200);
+    for (let i = 0; i < MAX_FAILURES; i++) expect((await verify(reqFrom("4.4.4.4", { pin: "1111" }))).status).toBe(403);
+    expect((await verify(reqFrom("4.4.4.4", { pin: "4821" }))).status).toBe(429);
+  });
+});

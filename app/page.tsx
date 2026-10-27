@@ -62,9 +62,9 @@ export default function Home() {
 
     {cart && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
       <p className="mute">A pharmacist reviews the cart. The PIN is checked <b>on the server</b> before any PayPal order can be created, including by the AI agent.</p>
-      <div className="row"><input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => setPin(e.target.value)} />
-        <button disabled={!pin || Number(cart.totalUSD) <= 0} onClick={() => setConfirmed(true)}>Confirm cart</button>
-        {confirmed && <span className="ok">✓ Confirmed (verified at order creation)</span>}</div></section>}
+      <div className="row"><input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => { setPin(e.target.value); setConfirmed(false); }} />
+        <button disabled={!pin || !!busy || Number(cart.totalUSD) <= 0} onClick={() => run("Checking PIN…", async () => { await post("/api/pharmacist/verify", { pin }); setConfirmed(true); })}>Confirm cart</button>
+        {confirmed && <span className="ok">✓ PIN verified by the server (re-checked at order creation)</span>}</div></section>}
 
     {cart && <section className="card"><div className="step">Step 5</div><h2>Pay</h2>
       <div className="row tabs"><button className={mode === "guided" ? "" : "ghost"} onClick={() => setMode("guided")}>PayPal button</button>
