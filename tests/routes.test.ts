@@ -15,12 +15,12 @@ describe("route input validation", () => {
   }
   it("cart: 400 on a negative quantity", async () => expect((await cart(req({ items: [{ name: "Fictamol 500 mg tablets", quantity: -3 }] }))).status).toBe(400));
   it("cart: 200 with valid items", async () => { const r = await cart(req({ items })); expect(r.status).toBe(200); expect((await r.json()).totalUSD).toBe("7.00"); });
-  it("create-order: 403 without the PIN", async () => expect((await createOrder(req({ items, pharmacistPin: "0000" }))).status).toBe(403));
+  it("create-order: 403 without the PIN", async () => expect((await createOrder(req({ items, pharmacistPin: "0000", cartHash: cartHash(buildCart(items)) }))).status).toBe(403));
   it("capture-order: 400 on an order id with path characters", async () => expect((await capture(req({ orderID: "../../v1/x", approvalToken: "x.y", items }))).status).toBe(400));
   it("create-order: 502 JSON when PayPal returns an error", async () => {
     vi.stubEnv("PAYPAL_MODE", "sandbox"); vi.stubEnv("PAYPAL_CLIENT_ID", "cid"); vi.stubEnv("PAYPAL_CLIENT_SECRET", "sec");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_client" }), { status: 401 })));
-    const r = await createOrder(req({ items, pharmacistPin: "4821" }));
+    const r = await createOrder(req({ items, pharmacistPin: "4821", cartHash: cartHash(buildCart(items)) }));
     vi.unstubAllGlobals();
     expect(r.status).toBe(502);
     expect((await r.json()).paypal.status).toBe(401);

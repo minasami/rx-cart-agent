@@ -36,7 +36,7 @@ describe("approval token (HMAC, short-lived, bound to orderID + cart hash)", () 
 });
 
 describe("capture requires the approval token from order creation", () => {
-  const newOrder = async () => { const r = await createOrder(req({ items, pharmacistPin: "4821" })); expect(r.status).toBe(200); return r.json(); };
+  const newOrder = async () => { const r = await createOrder(req({ items, pharmacistPin: "4821", cartHash: ch })); expect(r.status).toBe(200); return r.json(); };
   it("captures with the issued token (mock)", async () => {
     const o = await newOrder();
     const r = await capture(req({ orderID: o.id, approvalToken: o.approvalToken, items }));
@@ -63,10 +63,26 @@ describe("capture requires the approval token from order creation", () => {
     expect((await capture(req({ orderID: o.id, approvalToken: o.approvalToken, items }))).status).toBe(409);
   });
   it("agent issues a token only when the gate passed", async () => {
-    const blocked = await (await agent(req({ items, pharmacistPin: "" }))).json();
+    const blocked = await (await agent(req({ items, pharmacistPin: "", cartHash: ch }))).json();
     expect(blocked.approval).toBeUndefined();
-    const ok = await (await agent(req({ items, pharmacistPin: "4821" }))).json();
+    const ok = await (await agent(req({ items, pharmacistPin: "4821", cartHash: ch }))).json();
     expect(ok.approval.orderID).toMatch(/^MOCK-/);
     expect((await capture(req({ orderID: ok.approval.orderID, approvalToken: ok.approval.approvalToken, items }))).status).toBe(200);
+  });
+});
+
+describe("order is bound to the reviewed cart", () => {
+  it("/api/cart returns the cart hash the pharmacist reviews", async () => {
+    const { POST: cart } = await import("../app/api/cart/route");
+    expect((await (await cart(req({ items }))).json()).cartHash).toBe(ch);
+  });
+  it("create-order rejects items that differ from the reviewed cart (409), no order created", async () => {
+    const r = await createOrder(req({ items: [{ name: "Fictamol 500 mg tablets", quantity: 9 }], pharmacistPin: "4821", cartHash: ch }));
+    expect(r.status).toBe(409);
+    expect((await r.json()).approvalToken).toBeUndefined();
+  });
+  it("create-order requires a cart hash", async () => expect((await createOrder(req({ items, pharmacistPin: "4821" }))).status).toBe(400));
+  it("agent rejects a cart that differs from the reviewed one", async () => {
+    expect((await agent(req({ items: [{ name: "Fictamol 500 mg tablets", quantity: 9 }], pharmacistPin: "4821", cartHash: ch }))).status).toBe(409);
   });
 });

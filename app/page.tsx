@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 type Ex = { name: string; quantity: number };
+type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
 const SAMPLES = ["rx-1.png", "rx-2.png", "rx-3.png"];
 const post = async (u: string, b: unknown) => { const r = await fetch(u, { method: "POST", body: JSON.stringify(b) }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error ?? r.statusText); return j; };
@@ -10,7 +11,7 @@ export default function Home() {
   const [cfg, setCfg] = useState({ ai: "mock", paypal: "mock" });
   const [mode, setMode] = useState<"guided" | "agent">("guided");
   const [img, setImg] = useState<string>(); const [sample, setSample] = useState<string>();
-  const [items, setItems] = useState<Ex[]>([]); const [cart, setCart] = useState<{ lines: Line[]; totalUSD: string }>();
+  const [items, setItems] = useState<Ex[]>([]); const [cart, setCart] = useState<Cart>();
   const [pin, setPin] = useState(""); const [confirmed, setConfirmed] = useState(false);
   const [agent, setAgent] = useState<any>(); const [order, setOrder] = useState<any>(); const [receipt, setReceipt] = useState<any>();
   const [err, setErr] = useState(""); const [busy, setBusy] = useState("");
@@ -64,7 +65,7 @@ export default function Home() {
 
       {mode === "agent" && <>
         <p className="mute">The agent calls <code>build_cart</code>, then <code>create_paypal_order</code> (PayPal Agent Toolkit <code>create_order</code>, behind the server-side pharmacist gate). It controls no prices.</p>
-        <button disabled={!!busy} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems().length ? items : items, pharmacistPin: confirmed ? pin : "" }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
+        <button disabled={!!busy} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems().length ? items : items, pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
         {agent && <><p><b>Agent:</b> {agent.text}</p><pre className="trace">{agent.trace.map((t: any) => `▶ ${t.tool}\n${JSON.stringify(t.output, null, 1).slice(0, 600)}`).join("\n\n")}</pre></>}
         {order?.id && !receipt && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
           : <p className="mute">Sandbox order {order.id} created. Approve it via its PayPal approve link (<code>links[rel=payer-action]</code>), then capture.</p>)}
@@ -72,10 +73,10 @@ export default function Home() {
 
       {mode === "guided" && (!confirmed ? <p className="mute">Confirm the cart first.</p> :
         cfg.paypal === "mock" || !clientId
-          ? <button disabled={!!busy} onClick={() => run("Paying…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin }); keepOrder(o); setReceipt(await post("/api/paypal/capture-order", { orderID: o.id, approvalToken: o.approvalToken, items: okItems() })); })}>Pay with PayPal (mock sandbox)</button>
+          ? <button disabled={!!busy} onClick={() => run("Paying…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); setReceipt(await post("/api/paypal/capture-order", { orderID: o.id, approvalToken: o.approvalToken, items: okItems() })); })}>Pay with PayPal (mock sandbox)</button>
           : <PayPalScriptProvider options={{ clientId, currency: "USD", intent: "capture" }}>
             <PayPalButtons style={{ layout: "vertical" }}
-              createOrder={async () => { try { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin }); keepOrder(o); return o.id; } catch (e: any) { setErr(e.message); setConfirmed(false); throw e; } }}
+              createOrder={async () => { try { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); return o.id; } catch (e: any) { setErr(e.message); setConfirmed(false); throw e; } }}
               onApprove={async d => capture(d.orderID!)} onError={e => setErr(String(e))} /></PayPalScriptProvider>)}
     </section>}
 
