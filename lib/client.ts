@@ -1,12 +1,16 @@
 // Small client-side helpers kept free of React so they can be unit-tested.
-export type AppConfig = { ai: string; paypal: string; demoPin?: boolean };
+import { isClientId } from "./paypalSdk";
+export type AppConfig = { ai: string; paypal: string; demoPin?: boolean; paypalClientId?: string; paypalEnv?: "sandbox" };
 export const SAMPLES = ["rx-1.png", "rx-2.png", "rx-3.png"] as const;
 
 /** Validates the /api/config body. Returns undefined for anything malformed. */
 export const parseConfig = (j: unknown): AppConfig | undefined => {
   const o = j as Partial<AppConfig> | null;
   if (!o || typeof o !== "object" || typeof o.ai !== "string" || typeof o.paypal !== "string") return undefined;
-  return { ai: o.ai, paypal: o.paypal, demoPin: o.demoPin === true };
+  const c: AppConfig = { ai: o.ai, paypal: o.paypal, demoPin: o.demoPin === true };
+  // The SDK client ID is only used in sandbox mode and only if it is a well-formed ID.
+  if (o.paypal === "sandbox" && o.paypalEnv === "sandbox" && isClientId(o.paypalClientId)) { c.paypalClientId = o.paypalClientId; c.paypalEnv = "sandbox"; }
+  return c;
 };
 
 export type Badge = { label: string; tone: "loading" | "error" | "mock" | "real" };
