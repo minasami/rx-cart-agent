@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { geminiRetryFetch, retryDelayMs } from "../lib/googleFetch";
+import { geminiRetryFetch, retryDelayMs, ANSWERED_MODEL_HEADER } from "../lib/googleFetch";
 const err = (status: number, details: unknown[] = []) => new Response(JSON.stringify({ error: { code: status, status: status === 429 ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE", message: "x", details } }), { status });
 const ok = () => new Response("{}", { status: 200 });
 const retryInfo = (d: string) => ({ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: d });
@@ -33,5 +33,37 @@ describe("geminiRetryFetch", () => {
     const r = err(429, [retryInfo("1.2s")]);
     expect(await retryDelayMs(r)).toBe(1200); expect((await r.json()).error.code).toBe(429);
     expect(await retryDelayMs(new Response("not json", { status: 429 }))).toBeUndefined();
+  });
+});
+
+const U = (m: string) => `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
+const daily = () => err(429, [{ violations: [{ quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }] }, retryInfo("70000s")]);
+describe("geminiRetryFetch model fallback (free-tier quotas are per model)", () => {
+  it("falls back to the next model on a daily-quota 429, tags the answering model, and skips the exhausted one afterwards", async () => {
+    const base = vi.fn().mockImplementation(async (u: string) => (u.includes("/models/primary:") ? daily() : ok()));
+    let t = 1_000;
+    const f = geminiRetryFetch(base as any, { fallbackModels: ["fb1", "fb2"], sleep: async () => {}, now: () => t });
+    const r = await f(U("primary"), { method: "POST", body: "{}" });
+    expect(r.status).toBe(200); expect(r.headers.get(ANSWERED_MODEL_HEADER)).toBe("fb1");
+    expect(base.mock.calls.map(c => c[0])).toEqual([U("primary"), U("fb1")]);
+    await f(U("primary"), { body: "{}" });
+    expect(base.mock.calls.at(-1)![0]).toBe(U("fb1")); expect(base).toHaveBeenCalledTimes(3); // primary skipped while exhausted
+    t += 70_000_000; await f(U("primary"), { body: "{}" });
+    expect(base.mock.calls.at(-2)![0]).toBe(U("primary")); // retried after its quota window
+  });
+  it("falls back after 503 retries are used up; returns the last error when every model fails", async () => {
+    const base = vi.fn().mockImplementation(async () => err(503));
+    const r = await geminiRetryFetch(base as any, { fallbackModels: ["fb1"], sleep: async () => {} })(U("primary"));
+    expect(r.status).toBe(503); expect(base).toHaveBeenCalledTimes(6);
+  });
+  it("tags the primary model on success and passes non-model URLs through", async () => {
+    const base = vi.fn().mockImplementation(async () => ok());
+    const f = geminiRetryFetch(base as any, { fallbackModels: ["fb1"] });
+    expect((await f(U("primary"))).headers.get(ANSWERED_MODEL_HEADER)).toBe("primary");
+    expect((await f("https://example.test/other")).headers.get(ANSWERED_MODEL_HEADER)).toBeNull();
+  });
+  it("does not fall back on a client error (e.g. bad request)", async () => {
+    const base = vi.fn().mockResolvedValue(new Response("{}", { status: 400 }));
+    expect((await geminiRetryFetch(base as any, { fallbackModels: ["fb1"] })(U("primary"))).status).toBe(400); expect(base).toHaveBeenCalledTimes(1);
   });
 });

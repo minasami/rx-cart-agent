@@ -1,6 +1,6 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { createGoogle } from "@ai-sdk/google";
-import { geminiRetryFetch } from "./googleFetch";
+import { ANSWERED_MODEL_HEADER, geminiRetryFetch } from "./googleFetch";
 import { z } from "zod";
 import { MAX_QTY } from "./schemas";
 export type ExtractedItem = { name: string; quantity: number };
@@ -18,6 +18,14 @@ export const aiProvider = (): AiProvider => {
 /** Default model ids per provider. Must be vision + structured-output + tool-calling capable. */
 export const DEFAULT_AI_MODEL = "openai/gpt-4o-mini";
 export const DEFAULT_GOOGLE_MODEL = "gemini-3.5-flash";
+/** Tried in order when the google model is out of free-tier quota or overloaded (quotas are per model). AI_FALLBACK_MODELS
+ *  overrides (comma-separated); "none" disables. */
+export const DEFAULT_GOOGLE_FALLBACKS = ["gemini-3-flash-preview", "gemini-3.5-flash-lite"];
+export const googleFallbacks = () => {
+  const v = process.env.AI_FALLBACK_MODELS?.trim();
+  if (!v) return DEFAULT_GOOGLE_FALLBACKS;
+  return v.toLowerCase() === "none" ? [] : v.split(",").map(x => x.trim()).filter(x => /^[\w.-]+$/.test(x));
+};
 /** Model id for the active provider. An empty AI_MODEL (as in .env.example copies) falls back to the provider default. */
 export const aiModel = (provider: AiProvider = aiProvider()) =>
   process.env.AI_MODEL?.trim() || (provider === "google" ? DEFAULT_GOOGLE_MODEL : DEFAULT_AI_MODEL);
@@ -26,11 +34,16 @@ let googleProvider: { key: string; p: ReturnType<typeof createGoogle> } | null =
 export function resolveModel(provider: AiProvider = aiProvider()): LanguageModel {
   const id = aiModel(provider);
   if (provider !== "google") return id; // plain string ids resolve through the default (Vercel AI Gateway) provider
-  const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "";
-  if (!googleProvider || googleProvider.key !== key) googleProvider = { key, p: createGoogle({ apiKey: key || undefined, fetch: geminiRetryFetch() }) };
+  const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? "", fallbackModels = googleFallbacks(), cacheKey = key + "|" + fallbackModels.join(",");
+  if (!googleProvider || googleProvider.key !== cacheKey) googleProvider = { key: cacheKey, p: createGoogle({ apiKey: key || undefined, fetch: geminiRetryFetch(undefined, { fallbackModels }) }) };
   return googleProvider.p(id);
 }
 export const modelId = (m: LanguageModel) => (typeof m === "string" ? m : m.modelId);
+/** Model that actually answered (tagged by geminiRetryFetch, e.g. after a quota fallback); else the configured id. */
+export const answeredModel = (m: LanguageModel, response?: { headers?: Record<string, string> }) => {
+  const h = response?.headers?.[ANSWERED_MODEL_HEADER];
+  return typeof h === "string" && /^[\w.-]{1,80}$/.test(h) ? h : modelId(m);
+};
 /** Gemini "thinking" tokens count against maxOutputTokens, so give the google path more headroom. Google retries are done
  *  by geminiRetryFetch (honors the free tier's RetryInfo instead of burning the per-minute quota), so the SDK's are off. */
 export const callBudget = (provider: AiProvider, maxOutputTokens: number) =>
@@ -80,10 +93,10 @@ export async function extractPrescription(imageDataUrl: string, sampleId?: strin
   if (provider === "mock") return { items: MOCK_FIXTURES[sampleId ?? ""] ?? MOCK_FIXTURES["rx-1.png"], provider: "mock" };
   model ??= resolveModel(provider);
   const mediaType = imageDataUrl.slice(5, imageDataUrl.indexOf(";"));
-  const { output } = await generateText({
+  const { output, response } = await generateText({
     model, output: Output.object({ schema: ModelSchema }), instructions: EXTRACT_SYSTEM, temperature: 0, ...callBudget(provider, 1000),
     messages: [{ role: "user", content: [{ type: "text", text: "Transcribe the medicine lines and their quantities." }, { type: "file", data: imageDataUrl, mediaType }] }],
   });
   const { items, dropped } = sanitizeExtracted(output.items);
-  return { items, provider, model: modelId(model), ...(dropped.length ? { dropped } : {}) };
+  return { items, provider, model: answeredModel(model, response), ...(dropped.length ? { dropped } : {}) };
 }

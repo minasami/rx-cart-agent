@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
-import { aiProvider, aiModel, resolveModel, extractPrescription, DEFAULT_GOOGLE_MODEL, DEFAULT_AI_MODEL, MOCK_FIXTURES } from "../lib/ai";
+import { aiProvider, aiModel, resolveModel, extractPrescription, googleFallbacks, DEFAULT_GOOGLE_FALLBACKS, DEFAULT_GOOGLE_MODEL, DEFAULT_AI_MODEL, MOCK_FIXTURES } from "../lib/ai";
 import { runAgent } from "../lib/agent";
 import { providerErrorInfo, publicReason } from "../lib/providerError";
 import { POST as extract } from "../app/api/extract/route";
@@ -85,8 +85,8 @@ describe("agent via google (mocked)", () => {
   it("/api/agent drives Gemini tool calls end to end (mock PayPal), one order, approval token issued", async () => {
     vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821");
     const replies = [
-      gemini([{ functionCall: { name: "build_cart", args: {} } }]),
-      gemini([{ functionCall: { name: "create_paypal_order", args: {} } }]),
+      gemini([{ functionCall: { name: "build_cart", args: {} }, thoughtSignature: "c2ln" }]),
+      gemini([{ functionCall: { name: "create_paypal_order", args: {} }, thoughtSignature: "c2ln" }]),
       gemini([{ text: "Order created." }]),
     ];
     const f = vi.fn().mockImplementation(async () => replies.shift() ?? gemini([{ text: "" }]));
@@ -118,5 +118,41 @@ describe("retry-wrapped errors", () => {
     const last = Object.assign(new Error("Quota exceeded"), { name: "AI_APICallError", statusCode: 429, responseBody: JSON.stringify({ error: { status: "RESOURCE_EXHAUSTED" } }) });
     const i = providerErrorInfo(Object.assign(new Error("Failed after 3 attempts"), { name: "AI_RetryError", lastError: last, errors: [last] }));
     expect(i).toMatchObject({ status: 429, type: "RESOURCE_EXHAUSTED" });
+  });
+});
+
+describe("google model fallback (end to end, mocked HTTP)", () => {
+  it("AI_FALLBACK_MODELS parsing", () => {
+    expect(googleFallbacks()).toEqual(DEFAULT_GOOGLE_FALLBACKS);
+    vi.stubEnv("AI_FALLBACK_MODELS", " gemini-x , bad/id ,gemini-y"); expect(googleFallbacks()).toEqual(["gemini-x", "gemini-y"]);
+    vi.stubEnv("AI_FALLBACK_MODELS", "none"); expect(googleFallbacks()).toEqual([]);
+  });
+  it("/api/extract reports the fallback model that actually answered when the default is out of daily quota", async () => {
+    vi.stubEnv("AI_FALLBACK_MODELS", "gemini-fb-test");
+    const f = vi.fn().mockImplementation(async (u: string) => String(u).includes(`/models/${DEFAULT_GOOGLE_MODEL}:`)
+      ? new Response(JSON.stringify({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "q", details: [{ retryDelay: "70000s" }] } }), { status: 429 })
+      : gemini([{ text: JSON.stringify({ items: MOCK_FIXTURES["rx-3.png"] }) }]));
+    vi.stubGlobal("fetch", f);
+    const j = await (await extract(post({ imageDataUrl: IMG, sampleId: "rx-3.png" }))).json();
+    expect(j).toMatchObject({ provider: "google", model: "gemini-fb-test", items: MOCK_FIXTURES["rx-3.png"] });
+  });
+});
+describe("agent keeps a created order when the model fails afterwards", () => {
+  it("returns the deterministic summary (not a 502) so the approval is still issued", async () => {
+    let i = 0;
+    const m = new MockLanguageModelV4({ modelId: "gemini-mock", doGenerate: async () => {
+      const k = i++;
+      if (k === 0) return { content: [{ type: "tool-call", toolCallId: "a", toolName: "build_cart", input: "{}" }, { type: "tool-call", toolCallId: "b", toolName: "create_paypal_order", input: "{}" }], finishReason: { unified: "tool-calls", raw: "STOP" }, usage, warnings: [] } as any;
+      throw Object.assign(new Error("quota"), { name: "AI_APICallError", statusCode: 429 });
+    } });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await runAgent({ items: [{ name: "Fictamol 500 mg tablets", quantity: 2 }], approved: true, createOrder: vi.fn().mockResolvedValue({ id: "ORD9", status: "PAYER_ACTION_REQUIRED" }), useModel: true, model: m, provider: "google" });
+    spy.mockRestore();
+    expect(r.text).toBe("PayPal order ORD9 created for $7.00.");
+    expect((r as any).warning).toMatch(/model failed after the order was created/);
+  });
+  it("still throws when the model fails before any order exists", async () => {
+    const m = new MockLanguageModelV4({ modelId: "gemini-mock", doGenerate: async () => { throw Object.assign(new Error("quota"), { statusCode: 429 }); } });
+    await expect(runAgent({ items: [{ name: "Fictamol 500 mg tablets", quantity: 1 }], approved: true, createOrder: vi.fn(), useModel: true, model: m, provider: "google" })).rejects.toThrow("quota");
   });
 });
