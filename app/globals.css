@@ -5,6 +5,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;fl
 h1{margin:0;font-size:26px}h2{font-size:17px;margin:0 0 10px}
 .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#e8eefc;color:#1d3c8f;margin-left:6px}
 .badge.mock{background:#fff1d6;color:var(--warn)}
+.badge.loading{background:#eef1f5;color:var(--mute)}.badge.error{background:#fdecec;color:var(--bad)}
 .banner{background:#fff8e6;border:1px solid #f3d38a;border-radius:10px;padding:10px 14px;margin:16px 0;font-size:14px}
 .card{background:var(--card);border:1px solid #e3e8ef;border-radius:14px;padding:18px;margin:14px 0;box-shadow:0 1px 2px #0000000a}
 .card.done{border-color:#b7e1c9}.step{color:var(--mute);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}

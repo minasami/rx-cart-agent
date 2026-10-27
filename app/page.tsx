@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { savePending } from "@/lib/pending";
-import { SAMPLES, createBusyGuard, loadSample } from "@/lib/client";
+import { SAMPLES, createBusyGuard, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
@@ -21,7 +21,8 @@ const post = async (u: string, b: unknown) => {
 };
 
 export default function Home() {
-  const [cfg, setCfg] = useState<{ ai: string; paypal: string; demoPin?: boolean }>({ ai: "mock", paypal: "mock" });
+  // undefined until /api/config answers: the header shows a neutral "loading" badge, never a guessed "mock".
+  const [cfg, setCfg] = useState<AppConfig>(); const [cfgFailed, setCfgFailed] = useState(false);
   const [mode, setMode] = useState<"guided" | "agent">("guided");
   const [img, setImg] = useState<string>(); const [sample, setSample] = useState<string>();
   const [items, setItemsRaw] = useState<Ex[]>([]); const [cart, setCart] = useState<Cart>(); const [stale, setStale] = useState(false);
@@ -33,7 +34,12 @@ export default function Home() {
   const setBusy = (l: string) => { guard.set(l); setBusyState(guard.busy); };
   const [hydrated, setHydrated] = useState(false); const [loadingSample, setLoadingSample] = useState<string>();
   useEffect(() => setHydrated(true), []);
-  useEffect(() => { fetch("/api/config").then(r => r.json()).then(setCfg).catch(() => {}); }, []);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(j => { const c = parseConfig(j); if (!live) return; if (c) setCfg(c); else setCfgFailed(true); })
+      .catch(() => { if (live) setCfgFailed(true); });
+    return () => { live = false; };
+  }, []);
   const toDataUrl = (f: Blob) => new Promise<string>(r => { const fr = new FileReader(); fr.onload = () => r(fr.result as string); fr.readAsDataURL(f); });
   const reset = () => { setItemsRaw([]); setStale(false); setCart(undefined); setConfirmed(false); setAgent(undefined); keepOrder(undefined); setReceipt(undefined); setErr(""); };
   const run = async (label: string, f: () => Promise<void>) => { if (!guard.tryStart(label)) return; setBusyState(label); setErr(""); try { await f(); } catch (e: any) { setErr(e.message); } finally { guard.end(); setBusyState(""); } };
@@ -69,7 +75,7 @@ export default function Home() {
 
   return <main>
     <header><h1>💊 Rx Cart Agent</h1>
-      <div><span className={`badge ${cfg.ai === "mock" ? "mock" : ""}`}>AI: {cfg.ai}</span><span className={`badge ${cfg.paypal === "mock" ? "mock" : ""}`}>PayPal: {cfg.paypal}</span></div></header>
+      <div aria-live="polite" aria-busy={!cfg && !cfgFailed}>{configBadges(cfg, cfgFailed).map(b => <span key={b.label.split(":")[0]} className={`badge ${b.tone === "real" ? "" : b.tone}`}>{b.label}</span>)}</div></header>
     <div className="toasts" aria-live="polite">
       {busy && <div className="toast busy" role="status"><span className="spin" aria-hidden="true" />{busy}</div>}
       {err && <div className="toast error" role="alert"><span>⚠️ {err}</span><button className="ghost" aria-label="Dismiss error" onClick={() => setErr("")}>✕</button></div>}
@@ -106,7 +112,7 @@ export default function Home() {
     {cart && !stale && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
       <p className="mute">A pharmacist reviews the cart. The PIN is checked <b>on the server</b> before any PayPal order can be created, including by the AI agent.</p>
       <div className="row"><input type="password" placeholder="Pharmacist PIN" value={pin} onChange={e => { setPin(e.target.value); setConfirmed(false); }} />
-        {cfg.paypal === "mock" && cfg.demoPin && <button className="ghost" disabled={!!busy} title="Mock mode only. Fills the PIN without showing it."
+        {cfg?.paypal === "mock" && cfg?.demoPin && <button className="ghost" disabled={!!busy} title="Mock mode only. Fills the PIN without showing it."
           onClick={() => run("Loading demo PIN…", async () => { const r = await fetch("/api/pharmacist/demo-pin", { cache: "no-store" }); if (!r.ok) throw new Error("Demo PIN not available"); setPin((await r.json()).pin); setConfirmed(false); })}>Use demo PIN</button>}
         <button disabled={!pin || !!busy || Number(cart.totalUSD) <= 0} onClick={() => run("Checking PIN…", async () => { await post("/api/pharmacist/verify", { pin }); setConfirmed(true); })}>Confirm cart</button>
         {confirmed && <span className="ok">✓ PIN verified by the server (re-checked at order creation)</span>}</div></section>}
@@ -119,7 +125,7 @@ export default function Home() {
         <p className="mute">The agent calls <code>build_cart</code>, then <code>create_paypal_order</code> (PayPal Agent Toolkit <code>create_order</code>, behind the server-side pharmacist gate). It controls no prices.</p>
         <button disabled={!!busy || okItems().length === 0} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems(), pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
         {agent && <><p><b>Agent:</b> {agent.text}</p><pre className="trace">{agent.trace.map((t: any) => `▶ ${t.tool}\n${JSON.stringify(t.output, null, 1).slice(0, 600)}`).join("\n\n")}</pre></>}
-        {order?.id && !receipt && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
+        {order?.id && !receipt && cfg && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
           : <div className="row">
               {approveLink(order)
                 ? <a className="btn" href={approveLink(order)} rel="noopener noreferrer" onClick={e => { e.preventDefault(); try { goApprove(order); } catch (x: any) { setErr(x.message); } }}>Approve order {order.id} on PayPal (sandbox) →</a>
@@ -128,6 +134,7 @@ export default function Home() {
       </>}
 
       {mode === "guided" && (!confirmed ? <p className="mute">Confirm the cart first.</p> :
+        !cfg ? <p className="mute">{cfgFailed ? "Payment settings unavailable. Reload the page." : "Loading payment settings…"}</p> :
         cfg.paypal === "sandbox" && !clientId
           ? <button disabled={!!busy} onClick={() => run("Creating PayPal order…", async () => { const o = await post("/api/paypal/create-order", { items: okItems(), pharmacistPin: pin, cartHash: cart?.cartHash }); keepOrder(o); goApprove(o); })}>Pay with PayPal (sandbox, redirect)</button>
         : cfg.paypal === "mock"
