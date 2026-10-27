@@ -7,7 +7,7 @@ Checked Oct 24, 2026. Sources: https://developer.paypal.com/ai-tools/toolkit (up
 
 ## What it needs
 - Sandbox app Client ID + Secret (the same ones as now). For MCP, an access token from the OAuth client-credentials flow.
-- A tool-calling model through AI Gateway.
+- A tool-calling model: Google Gemini (`AI_PROVIDER=google`, default `gemini-3.5-flash`) or AI Gateway (`AI_PROVIDER=gateway`).
 - A system prompt that limits the agent to the order tools only.
 
 ## Proposed design (keeps the human gate)

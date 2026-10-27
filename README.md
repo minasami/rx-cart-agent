@@ -5,7 +5,7 @@ An open-source demo. A patient uploads a **synthetic** prescription image. An AI
 > ⚠️ Demo only. All medicines, prices and prescriptions are fictional. The app gives no clinical, dosing or substitution advice. Items that are not found or out of stock are flagged, never swapped. No real payments are taken.
 
 ## Stack
-Next.js (App Router) on Vercel · Vercel AI SDK (`generateObject`, vision) through AI Gateway · PayPal Orders v2 REST + `@paypal/react-paypal-js` · zod.
+Next.js (App Router) on Vercel · Vercel AI SDK (`generateText` + `Output.object`, vision, tool calling) through Google Gemini API (`@ai-sdk/google`) or AI Gateway · PayPal Orders v2 REST + `@paypal/react-paypal-js` · zod.
 
 ## Run
 ```bash
@@ -14,7 +14,12 @@ cp .env.example .env.local   # set PHARMACIST_DEMO_PIN; everything else can stay
 npm run dev                  # full flow in MOCK mode, no keys needed
 npm test                     # vitest: matching, cart validation, PIN gate + rate limit, PayPal errors, approval tokens, routes
 ```
-Real providers: `AI_PROVIDER=gateway` + `AI_GATEWAY_API_KEY`; `PAYPAL_MODE=sandbox` + sandbox `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`NEXT_PUBLIC_PAYPAL_CLIENT_ID`.
+Real providers:
+- AI (extraction + agent tool calling), pick one:
+  - `AI_PROVIDER=google` + `GOOGLE_GENERATIVE_AI_API_KEY` (free key from [Google AI Studio](https://aistudio.google.com/apikey)). Default model `gemini-3.5-flash` (vision, structured output and tool calling); override with `AI_MODEL`, e.g. `AI_MODEL=gemini-3-flash-preview`. Use bare Gemini ids, no `google/` prefix. The free tier is rate limited and sometimes returns 503 "high demand"; the app retries twice and then shows a readable 502 reason. Older ids such as `gemini-2.5-flash` / `gemini-2.0-flash` return 404 for new keys.
+  - `AI_PROVIDER=gateway` + `AI_GATEWAY_API_KEY` (Vercel AI Gateway; needs a card on the Vercel team). `AI_MODEL` defaults to `openai/gpt-4o-mini`.
+  - Anything else: `mock` (fixtures for the bundled samples).
+- PayPal: `PAYPAL_MODE=sandbox` + sandbox `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`NEXT_PUBLIC_PAYPAL_CLIENT_ID`.
 
 ## Agent mode
 `POST /api/agent`: an AI SDK agent with two tools. `build_cart` and `create_paypal_order`, which wraps the PayPal Agent Toolkit `create_order` (orders.create only). The pharmacist PIN is checked on the server. The tool schemas expose no amounts or approval, so the model can't bypass the gate.
