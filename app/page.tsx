@@ -5,7 +5,14 @@ type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
 const SAMPLES = ["rx-1.png", "rx-2.png", "rx-3.png"];
-const post = async (u: string, b: unknown) => { const r = await fetch(u, { method: "POST", body: JSON.stringify(b) }); const j = await r.json(); if (!r.ok || j.error) throw new Error(j.error ?? r.statusText); return j; };
+// Treats non-2xx, non-JSON bodies, {error} and PayPal's error shape ({name, message, debug_id}) as errors.
+const post = async (u: string, b: unknown) => {
+  const r = await fetch(u, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });
+  let j: any = null; try { j = await r.json(); } catch { /* non-JSON body */ }
+  const paypalErr = j && typeof j.name === "string" && typeof j.message === "string";
+  if (!r.ok || !j || j.error || paypalErr) throw new Error(j?.error ?? (paypalErr ? `${j.name}: ${j.message}` : `${r.status} ${r.statusText || "Request failed"}`));
+  return j;
+};
 
 export default function Home() {
   const [cfg, setCfg] = useState({ ai: "mock", paypal: "mock" });
