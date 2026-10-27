@@ -6,4 +6,13 @@ describe("pharmacist PIN gate", () => {
   it("rejects a missing PIN", () => expect(pharmacistApproved(undefined, "4821")).toBe(false));
   it("rejects when no PIN is configured", () => expect(pharmacistApproved("", "")).toBe(false));
   it("rejects a non-string PIN", () => expect(pharmacistApproved(4821 as unknown, "4821")).toBe(false));
+  it("rejects a PIN of different length without throwing", () => {
+    expect(pharmacistApproved("48210", "4821")).toBe(false);
+    expect(pharmacistApproved("4", "4821")).toBe(false);
+    expect(pharmacistApproved("x".repeat(10_000), "4821")).toBe(false);
+  });
+  it("rejects a prefix / unicode look-alike", () => {
+    expect(pharmacistApproved("482", "4821")).toBe(false);
+    expect(pharmacistApproved("４８２１", "4821")).toBe(false);
+  });
 });
