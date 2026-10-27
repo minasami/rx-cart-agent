@@ -4,6 +4,11 @@ import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
+// PayPal approve link from an order (rel payer-action or approve), only if it is an https *.paypal.com URL.
+const approveLink = (o: any): string | undefined => {
+  const href = (o?.links as any[] | undefined)?.find(l => l?.rel === "payer-action" || l?.rel === "approve")?.href;
+  try { const u = new URL(href); return u.protocol === "https:" && (u.hostname === "paypal.com" || u.hostname.endsWith(".paypal.com")) ? u.href : undefined; } catch { return undefined; }
+};
 const SAMPLES = ["rx-1.png", "rx-2.png", "rx-3.png"];
 // Treats non-2xx, non-JSON bodies, {error} and PayPal's error shape ({name, message, debug_id}) as errors.
 const post = async (u: string, b: unknown) => {
@@ -77,7 +82,11 @@ export default function Home() {
         <button disabled={!!busy || okItems().length === 0} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems(), pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
         {agent && <><p><b>Agent:</b> {agent.text}</p><pre className="trace">{agent.trace.map((t: any) => `▶ ${t.tool}\n${JSON.stringify(t.output, null, 1).slice(0, 600)}`).join("\n\n")}</pre></>}
         {order?.id && !receipt && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
-          : <p className="mute">Sandbox order {order.id} created. Approve it via its PayPal approve link (<code>links[rel=payer-action]</code>), then capture.</p>)}
+          : <div className="row">
+              {approveLink(order)
+                ? <a className="btn" href={approveLink(order)} target="_blank" rel="noopener noreferrer">Approve order {order.id} on PayPal (sandbox) ↗</a>
+                : <span className="mute">Sandbox order {order.id} created, but PayPal returned no approve link.</span>}
+              <button className="ghost" disabled={!!busy} onClick={() => capture(order.id)}>I approved it: capture</button></div>)}
       </>}
 
       {mode === "guided" && (!confirmed ? <p className="mute">Confirm the cart first.</p> :
