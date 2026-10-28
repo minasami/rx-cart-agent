@@ -59,3 +59,8 @@ describe("busyHint / demoFallbackFor", () => {
     expect(demoFallbackFor("rx-1.png")).toBe("rx-1.png"); expect(demoFallbackFor(undefined)).toBeUndefined(); expect(demoFallbackFor("me.png")).toBeUndefined();
   });
 });
+import { sampleLabel, sampleAlt, SAMPLES } from "@/lib/client";
+describe("sample thumbnails", () => {
+  it("have visible numbered labels", () => expect(SAMPLES.map(sampleLabel)).toEqual(["Sample 1", "Sample 2", "Sample 3"]));
+  it("have descriptive alt text", () => { expect(sampleAlt("rx-2.png")).toMatch(/^Sample 2: synthetic .*prescription/); expect(sampleAlt("rx-2.png")).not.toContain(".png"); });
+});

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PayPalSdkButtons } from "./PayPalSdkButtons";
 import { savePending } from "@/lib/pending";
-import { SAMPLES, lineStatusText, payButtonProps, busyHint, createBusyGuard, demoFallbackFor, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
+import { SAMPLES, sampleLabel, sampleAlt, lineStatusText, payButtonProps, busyHint, createBusyGuard, demoFallbackFor, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
@@ -104,8 +104,8 @@ export default function Home() {
     <section className={`card ${img ? "done" : ""}`}><div className="step">Step 1</div><h2>Upload a prescription</h2>
       <div className="row samples" aria-busy={!hydrated || !!loadingSample}>{SAMPLES.map(s =>
         <button key={s} type="button" className={`sample ${sample === s ? "sel" : ""} ${loadingSample === s ? "loading" : ""}`}
-          disabled={!hydrated || !!busy} aria-pressed={sample === s} title={hydrated ? `Use sample ${s}` : "Loading…"} onClick={() => pickSample(s)}>
-          <img src={`/samples/${s}`} alt={`Sample prescription ${s}`} />{loadingSample === s && <span className="spin" aria-hidden="true" />}</button>)}
+          disabled={!hydrated || !!busy} aria-pressed={sample === s} title={hydrated ? `Use ${sampleLabel(s)}` : "Loading…"} onClick={() => pickSample(s)}>
+          <img src={`/samples/${s}`} alt={sampleAlt(s)} /><span className="sample-label">{sampleLabel(s)}</span>{loadingSample === s && <span className="spin" aria-hidden="true" />}</button>)}
         {!hydrated && <span className="mute">Loading…</span>}</div>
       <div className="row"><input type="file" accept="image/*" disabled={!!busy} onChange={async e => { const f = e.target.files?.[0]; if (f) { reset(); setSample(undefined); setImg(await toDataUrl(f)); } }} />
         <button disabled={!img || !!busy} onClick={() => img && extract(img, sample)}>{busy.startsWith("Reading") ? busy : "Extract medicines with AI"}</button></div>

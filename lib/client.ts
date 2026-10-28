@@ -65,3 +65,6 @@ export const payButtonProps = (confirmed: boolean, busy: boolean, extraBlock = f
   const off = !confirmed || busy || extraBlock;
   return { disabled: off, "aria-disabled": off, className: !confirmed ? "pay-locked" : undefined, title: !confirmed ? "Confirm the cart first" : undefined };
 };
+/** Visible label and alt text for a bundled sample prescription thumbnail. */
+export const sampleLabel = (s: string): string => `Sample ${SAMPLES.indexOf(s as (typeof SAMPLES)[number]) + 1}`;
+export const sampleAlt = (s: string): string => `${sampleLabel(s)}: synthetic handwritten-style prescription (fictional medicines), click to extract`;
