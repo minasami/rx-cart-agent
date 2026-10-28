@@ -2,17 +2,18 @@ import { z } from "zod";
 import { runAgent, toolkitCreateOrder, mockCreateOrder } from "@/lib/agent";
 import { checkPinLimited } from "@/lib/ratelimit";
 import { buildCart } from "@/lib/cart";
-import { cartHash, signApproval } from "@/lib/approval";
+import { cartHash, reviewHash, signApproval } from "@/lib/approval";
 import { aiProvider } from "@/lib/ai";
 import { CartHashSchema, CartItemsSchema, OrderIdSchema, PinSchema } from "@/lib/schemas";
 import { paypalMode } from "@/lib/mode";
 import { HttpError, jsonError, parseBody, route } from "@/lib/http";
 import { logProviderError, publicReason } from "@/lib/providerError";
-const Body = z.object({ items: CartItemsSchema, pharmacistPin: PinSchema.optional(), cartHash: CartHashSchema });
+const Body = z.object({ items: CartItemsSchema, pharmacistPin: PinSchema.optional(), cartHash: CartHashSchema, reviewHash: CartHashSchema });
 export const POST = route(async req => {
-  const { items, pharmacistPin, cartHash: reviewed } = await parseBody(req, Body);
-  const ch = cartHash(buildCart(items));
-  if (ch !== reviewed) return jsonError(409, "Cart changed since the pharmacist reviewed it. Rebuild and confirm again.");
+  const { items, pharmacistPin, cartHash: reviewed, reviewHash: reviewedAll } = await parseBody(req, Body);
+  // items = the full requested list the pharmacist reviewed (incl. excluded lines); statuses are re-derived server-side.
+  const built = buildCart(items), ch = cartHash(built);
+  if (ch !== reviewed || reviewHash(built) !== reviewedAll) return jsonError(409, "Cart changed since the pharmacist reviewed it. Rebuild and confirm again.");
   const approved = checkPinLimited(req, pharmacistPin); // server-side; the model never sees the PIN
   const paypalLive = paypalMode() === "sandbox";
   let r: Awaited<ReturnType<typeof runAgent>>;

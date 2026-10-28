@@ -7,7 +7,8 @@ import { POST as extract } from "../app/api/extract/route";
 import { POST as agent } from "../app/api/agent/route";
 import { GET as config } from "../app/api/config/route";
 import { _resetPinLimiter } from "../lib/ratelimit";
-import { cartHash } from "../lib/approval";
+import { cartHash, reviewHash } from "../lib/approval";
+import { POST as cartRoute } from "../app/api/cart/route";
 import { buildCart } from "../lib/cart";
 
 const FAKE_KEY = "test-google-key-not-real";
@@ -83,6 +84,29 @@ describe("agent via google (mocked)", () => {
     const r = await runAgent({ items: [{ name: "Fictamol 500 mg tablets", quantity: 1 }], approved: false, createOrder: vi.fn(), useModel: true, model: m, provider: "google" });
     expect(r).toMatchObject({ provider: "google", model: "gemini-mock", text: "All items were found and in stock; nothing was substituted. Cart built." });
   });
+  it("rx-3: confirmed cart with a not-found item -> /api/agent summary names it (cart route -> agent route)", async () => {
+    vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821");
+    const rx3 = [{ name: "Fictamol 500 mg tablets", quantity: 1 }, { name: "Unknownex 5 mg tablets", quantity: 1 }];
+    const c = await (await cartRoute(post({ items: rx3 }))).json();
+    expect(c.lines.map((l: any) => l.status)).toEqual(["ok", "not_found"]);
+    // The client sends the full reviewed list (as the UI does), bound by both hashes from /api/cart.
+    const body = { items: c.lines.map((l: any) => ({ name: l.requested, quantity: l.quantity })), pharmacistPin: "4821", cartHash: c.cartHash, reviewHash: c.reviewHash };
+    const replies = [
+      gemini([{ functionCall: { name: "build_cart", args: {} }, thoughtSignature: "c2ln" }]),
+      gemini([{ functionCall: { name: "create_paypal_order", args: {} }, thoughtSignature: "c2ln" }]),
+      gemini([{ text: "Order created." }]),
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => replies.shift() ?? gemini([{ text: "" }])));
+    const r = await agent(post(body));
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j.trace.find((t: any) => t.tool === "build_cart").output.flagged).toEqual([{ requested: "Unknownex 5 mg tablets", status: "not_found" }]);
+    expect(j.text).toContain("Unknownex 5 mg tablets was not found in the catalog");
+    expect(j.text).not.toContain("All items were found");
+    expect(j.approval.orderID).toMatch(/^MOCK-/);
+    // Dropping the excluded line (the old client behaviour) no longer matches what was confirmed.
+    expect((await agent(post({ ...body, items: body.items.slice(0, 1) }))).status).toBe(409);
+  });
   it("/api/agent drives Gemini tool calls end to end (mock PayPal), one order, approval token issued", async () => {
     vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821");
     const replies = [
@@ -93,7 +117,7 @@ describe("agent via google (mocked)", () => {
     const f = vi.fn().mockImplementation(async () => replies.shift() ?? gemini([{ text: "" }]));
     vi.stubGlobal("fetch", f);
     const items = [{ name: "Fictamol 500 mg tablets", quantity: 2 }];
-    const r = await agent(post({ items, pharmacistPin: "4821", cartHash: cartHash(buildCart(items)) }));
+    const r = await agent(post({ items, pharmacistPin: "4821", cartHash: cartHash(buildCart(items)), reviewHash: reviewHash(buildCart(items)) }));
     expect(r.status).toBe(200);
     const j = await r.json();
     expect(j).toMatchObject({ provider: "google", model: DEFAULT_GOOGLE_MODEL, approved: true, paypal: "mock", text: "All items were found and in stock; nothing was substituted. Order created." });

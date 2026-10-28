@@ -23,6 +23,12 @@ export function cartHash(cart: Cart): string {
   return createHash("sha256").update(JSON.stringify({ v: 1, ok, total: cart.totalUSD })).digest("hex");
 }
 
+/** Hash of the full reviewed cart, including excluded lines (not found / out of stock), so the agent's status is bound to what the pharmacist saw. */
+export function reviewHash(cart: Cart): string {
+  const all = cart.lines.map(l => [l.requested, l.quantity, l.status, l.match?.sku ?? null]);
+  return createHash("sha256").update(JSON.stringify({ v: 1, all, ok: cartHash(cart) })).digest("hex");
+}
+
 const b64u = (b: Buffer | string) => Buffer.from(b).toString("base64url");
 const mac = (payload: string) => createHmac("sha256", secret()).update(payload).digest();
 

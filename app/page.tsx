@@ -4,7 +4,7 @@ import { PayPalSdkButtons } from "./PayPalSdkButtons";
 import { savePending } from "@/lib/pending";
 import { SAMPLES, sampleLabel, sampleAlt, lineStatusText, payButtonProps, busyHint, createBusyGuard, demoFallbackFor, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
 type Ex = { name: string; quantity: number };
-type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
+type Cart = { lines: Line[]; totalUSD: string; cartHash: string; reviewHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
 // PayPal approve link from an order (rel payer-action or approve), only if it is an https *.paypal.com URL.
 const approveLink = (o: any): string | undefined => {
@@ -149,7 +149,7 @@ export default function Home() {
 
       {mode === "agent" && <>
         <p className="mute">The agent calls <code>build_cart</code>, then <code>create_paypal_order</code> (PayPal Agent Toolkit <code>create_order</code>, behind the server-side pharmacist gate). It controls no prices.</p>
-        <button {...payButtonProps(confirmed, !!busy, okItems().length === 0)} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: okItems(), pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
+        <button {...payButtonProps(confirmed, !!busy, okItems().length === 0)} onClick={() => run("Agent working…", async () => { const r = await post("/api/agent", { items: (cart?.lines ?? []).map(l => ({ name: l.requested, quantity: l.quantity })), pharmacistPin: confirmed ? pin : "", cartHash: cart?.cartHash, reviewHash: cart?.reviewHash }); setAgent(r); const o = [...r.trace].reverse().find((t: any) => t.tool === "create_paypal_order")?.output; if (o?.id && r.approval) keepOrder({ ...o, approvalToken: r.approval.approvalToken }); })}>{busy === "Agent working…" ? busy : "Run agent"}</button>
         {agent && <><p><b>Agent:</b> {agent.text}</p><pre className="trace">{agent.trace.map((t: any) => `▶ ${t.tool}\n${JSON.stringify(t.output, null, 1).slice(0, 600)}`).join("\n\n")}</pre></>}
         {order?.id && !receipt && cfg && (cfg.paypal === "mock" ? <button onClick={() => capture(order.id)}>Approve & capture (mock sandbox)</button>
           : <div className="row">

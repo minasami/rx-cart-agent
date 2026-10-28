@@ -1,6 +1,6 @@
 import { _resetPinLimiter } from "../lib/ratelimit";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { signApproval, verifyApproval, cartHash, APPROVAL_TTL_MS } from "../lib/approval";
+import { signApproval, verifyApproval, cartHash, reviewHash, APPROVAL_TTL_MS } from "../lib/approval";
 import { buildCart } from "../lib/cart";
 import { POST as createOrder } from "../app/api/paypal/create-order/route";
 import { POST as capture } from "../app/api/paypal/capture-order/route";
@@ -64,9 +64,9 @@ describe("capture requires the approval token from order creation", () => {
     expect((await capture(req({ orderID: o.id, approvalToken: o.approvalToken, items }))).status).toBe(409);
   });
   it("agent issues a token only when the gate passed", async () => {
-    const blocked = await (await agent(req({ items, pharmacistPin: "", cartHash: ch }))).json();
+    const blocked = await (await agent(req({ items, pharmacistPin: "", cartHash: ch, reviewHash: reviewHash(buildCart(items)) }))).json();
     expect(blocked.approval).toBeUndefined();
-    const ok = await (await agent(req({ items, pharmacistPin: "4821", cartHash: ch }))).json();
+    const ok = await (await agent(req({ items, pharmacistPin: "4821", cartHash: ch, reviewHash: reviewHash(buildCart(items)) }))).json();
     expect(ok.approval.orderID).toMatch(/^MOCK-/);
     expect((await capture(req({ orderID: ok.approval.orderID, approvalToken: ok.approval.approvalToken, items }))).status).toBe(200);
   });
@@ -84,6 +84,6 @@ describe("order is bound to the reviewed cart", () => {
   });
   it("create-order requires a cart hash", async () => expect((await createOrder(req({ items, pharmacistPin: "4821" }))).status).toBe(400));
   it("agent rejects a cart that differs from the reviewed one", async () => {
-    expect((await agent(req({ items: [{ name: "Fictamol 500 mg tablets", quantity: 9 }], pharmacistPin: "4821", cartHash: ch }))).status).toBe(409);
+    expect((await agent(req({ items: [{ name: "Fictamol 500 mg tablets", quantity: 9 }], pharmacistPin: "4821", cartHash: ch, reviewHash: reviewHash(buildCart(items)) }))).status).toBe(409);
   });
 });
