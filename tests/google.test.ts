@@ -79,16 +79,16 @@ describe("agent via google (mocked)", () => {
     let i = 0;
     const m = new MockLanguageModelV4({ modelId: "gemini-mock", doGenerate: async () => (i++ === 0
       ? { content: [{ type: "tool-call", toolCallId: "a", toolName: "build_cart", input: "{}" }], finishReason: { unified: "tool-calls", raw: "STOP" }, usage, warnings: [] }
-      : { content: [{ type: "text", text: "Cart built." }], finishReason: { unified: "stop", raw: "STOP" }, usage, warnings: [] }) as any });
+      : { content: [{ type: "text", text: "All items were found and in stock; nothing was substituted. Cart built." }], finishReason: { unified: "stop", raw: "STOP" }, usage, warnings: [] }) as any });
     const r = await runAgent({ items: [{ name: "Fictamol 500 mg tablets", quantity: 1 }], approved: false, createOrder: vi.fn(), useModel: true, model: m, provider: "google" });
-    expect(r).toMatchObject({ provider: "google", model: "gemini-mock", text: "Cart built." });
+    expect(r).toMatchObject({ provider: "google", model: "gemini-mock", text: "All items were found and in stock; nothing was substituted. Cart built." });
   });
   it("/api/agent drives Gemini tool calls end to end (mock PayPal), one order, approval token issued", async () => {
     vi.stubEnv("PAYPAL_MODE", "mock"); vi.stubEnv("PHARMACIST_DEMO_PIN", "4821");
     const replies = [
       gemini([{ functionCall: { name: "build_cart", args: {} }, thoughtSignature: "c2ln" }]),
       gemini([{ functionCall: { name: "create_paypal_order", args: {} }, thoughtSignature: "c2ln" }]),
-      gemini([{ text: "Order created." }]),
+      gemini([{ text: "All items were found and in stock; nothing was substituted. Order created." }]),
     ];
     const f = vi.fn().mockImplementation(async () => replies.shift() ?? gemini([{ text: "" }]));
     vi.stubGlobal("fetch", f);
@@ -96,7 +96,7 @@ describe("agent via google (mocked)", () => {
     const r = await agent(post({ items, pharmacistPin: "4821", cartHash: cartHash(buildCart(items)) }));
     expect(r.status).toBe(200);
     const j = await r.json();
-    expect(j).toMatchObject({ provider: "google", model: DEFAULT_GOOGLE_MODEL, approved: true, paypal: "mock", text: "Order created." });
+    expect(j).toMatchObject({ provider: "google", model: DEFAULT_GOOGLE_MODEL, approved: true, paypal: "mock", text: "All items were found and in stock; nothing was substituted. Order created." });
     expect(j.trace.map((t: any) => t.tool)).toEqual(["build_cart", "create_paypal_order"]);
     expect(j.approval.orderID).toMatch(/^MOCK-/);
     const tools = JSON.parse(f.mock.calls[0][1].body).tools;
@@ -170,7 +170,7 @@ describe("agent keeps a created order when the model fails afterwards", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const r = await runAgent({ items: [{ name: "Fictamol 500 mg tablets", quantity: 2 }], approved: true, createOrder: vi.fn().mockResolvedValue({ id: "ORD9", status: "PAYER_ACTION_REQUIRED" }), useModel: true, model: m, provider: "google" });
     spy.mockRestore();
-    expect(r.text).toBe("PayPal order ORD9 created for $7.00.");
+    expect(r.text).toBe("All items were found and in stock; nothing was substituted. PayPal order ORD9 created for $7.00.");
     expect((r as any).warning).toMatch(/model failed after the order was created/);
   });
   it("still throws when the model fails before any order exists", async () => {

@@ -32,7 +32,7 @@ describe("agent PIN gate around PayPal create_order", () => {
   });
   it("mock agent summary labels out-of-stock lines readably (no stray underscore)", async () => {
     const r = await runAgent({ items: [{ name: "Mockazole 20 mg tablets", quantity: 1 }], approved: false, createOrder: vi.fn(), useModel: false });
-    expect(r.text).toContain("Mockazole 20 mg tablets (out of stock)");
+    expect(r.text).toContain("Mockazole 20 mg tablets was out of stock and was left out");
     expect(r.text).not.toContain("_");
   });
 });
