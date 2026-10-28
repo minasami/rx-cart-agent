@@ -60,3 +60,8 @@ export const demoFallbackFor = (sampleId: string | undefined): string | undefine
 export const OUT_OF_STOCK_NOTE = "Out of stock — not added, no substitute offered";
 export const lineStatusText = (status: string): string =>
   status === "ok" ? "✓ In stock" : status === "not_found" ? "✕ Not in catalog: no substitute" : `⚠ ${OUT_OF_STOCK_NOTE}`;
+/** Pay buttons (PayPal + AI agent) are disabled, aria-disabled and muted until the cart is confirmed. */
+export const payButtonProps = (confirmed: boolean, busy: boolean, extraBlock = false) => {
+  const off = !confirmed || busy || extraBlock;
+  return { disabled: off, "aria-disabled": off, className: !confirmed ? "pay-locked" : undefined, title: !confirmed ? "Confirm the cart first" : undefined };
+};

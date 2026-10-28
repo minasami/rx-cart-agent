@@ -13,3 +13,13 @@ describe("out-of-stock lines", () => {
     expect(lineStatusText("ok")).toBe("✓ In stock");
   });
 });
+import { payButtonProps } from "../lib/client";
+describe("pay buttons before confirmation", () => {
+  it("are disabled, aria-disabled and muted until confirmed", () => {
+    expect(payButtonProps(false, false)).toMatchObject({ disabled: true, "aria-disabled": true, className: "pay-locked" });
+  });
+  it("are enabled once confirmed and idle", () => expect(payButtonProps(true, false)).toMatchObject({ disabled: false, "aria-disabled": false, className: undefined }));
+  it("stay disabled while busy or blocked", () => {
+    expect(payButtonProps(true, true).disabled).toBe(true); expect(payButtonProps(true, false, true).disabled).toBe(true);
+  });
+});

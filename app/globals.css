@@ -31,3 +31,4 @@ a.btn{display:inline-block;background:var(--pri);color:#fff;border-radius:9px;pa
 .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .paypal-sdk{max-width:380px;margin:8px 0}.paypal-sdk .spin{display:inline-block;vertical-align:middle}
+.pay-locked,.pay-locked:disabled{background:#c9d1dc!important;color:#5b6573!important;opacity:.7;cursor:not-allowed;filter:grayscale(1)}
