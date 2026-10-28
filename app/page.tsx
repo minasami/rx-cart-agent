@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PayPalSdkButtons } from "./PayPalSdkButtons";
 import { savePending } from "@/lib/pending";
-import { SAMPLES, busyHint, createBusyGuard, demoFallbackFor, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
+import { SAMPLES, lineStatusText, busyHint, createBusyGuard, demoFallbackFor, loadSample, parseConfig, configBadges, type AppConfig } from "@/lib/client";
 type Ex = { name: string; quantity: number };
 type Cart = { lines: Line[]; totalUSD: string; cartHash: string };
 type Line = { requested: string; quantity: number; status: string; match: { name: string; pack: string; priceUSD: number } | null };
@@ -130,9 +130,10 @@ export default function Home() {
     {cart && <section className={`card ${stale ? "stale" : ""}`}><div className="step">Step 3</div><h2>Cart: Demo Pharmacy (fictional)</h2>
       <table><thead><tr><th>Requested</th><th>Qty</th><th>Status</th><th>Line total</th></tr></thead><tbody>
         {cart.lines.map((l, i) => <tr key={i}><td>{l.requested}{l.match && <div className="mute">{l.match.pack}</div>}</td><td>{l.quantity}</td>
-          <td>{l.status === "ok" ? <span className="ok">✓ In stock</span> : l.status === "not_found" ? <span className="bad">✕ Not in catalog: no substitute</span> : <span className="warn">⚠ Out of stock</span>}</td>
-          <td>{l.status === "ok" ? `$${(l.match!.priceUSD * l.quantity).toFixed(2)}` : "-"}</td></tr>)}
-      </tbody></table><p className="total">Total: ${cart.totalUSD}</p></section>}
+          <td><span className={l.status === "ok" ? "ok" : l.status === "not_found" ? "bad" : "warn"}>{lineStatusText(l.status)}</span></td>
+          <td>{l.status === "ok" ? `$${(l.match!.priceUSD * l.quantity).toFixed(2)}` : <span className="mute">excluded</span>}</td></tr>)}
+      </tbody></table><p className="total">Total: ${cart.totalUSD}</p>
+      {cart.lines.some(l => l.status !== "ok") && <p className="mute">Flagged items are excluded from the total and are not substituted.</p>}</section>}
 
     {cart && !stale && <section className={`card ${confirmed ? "done" : ""}`}><div className="step">Step 4</div><h2>Pharmacist confirmation</h2>
       <p className="mute">A pharmacist reviews the cart. The PIN is checked <b>on the server</b> before any PayPal order can be created, including by the AI agent.</p>

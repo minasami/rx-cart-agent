@@ -56,3 +56,7 @@ export const busyHint = (elapsedMs: number, slowAfterMs = 8_000): string => {
 /** A failed extraction can fall back to the labeled demo fixture only for the bundled samples. */
 export const demoFallbackFor = (sampleId: string | undefined): string | undefined =>
   sampleId && (SAMPLES as readonly string[]).includes(sampleId) ? sampleId : undefined;
+/** Cart status label shown to the user. Out-of-stock and not-found lines are never charged or substituted. */
+export const OUT_OF_STOCK_NOTE = "Out of stock — not added, no substitute offered";
+export const lineStatusText = (status: string): string =>
+  status === "ok" ? "✓ In stock" : status === "not_found" ? "✕ Not in catalog: no substitute" : `⚠ ${OUT_OF_STOCK_NOTE}`;
